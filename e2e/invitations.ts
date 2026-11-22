@@ -35,5 +35,5 @@ export async function sendInvitation(page: Page, email: string, role: "Engineer"
   const form = page.getByRole("form", { name: "Invite a User" });
   await form.getByLabel("Email").fill(email);
   await form.getByLabel("Role").selectOption({ label: role });
-  await form.getByRole("button", { name: "Send invitation" }).click();
+  await form.getByRole("button", { name: "Send Invitation" }).click();
 }

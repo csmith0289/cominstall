@@ -11,7 +11,7 @@ import { isListedEmail } from "./listed-email";
 
 export const SIGNUPS_CLOSED_CODE = "SIGNUPS_CLOSED";
 export const SIGNUPS_CLOSED_MESSAGE =
-  "You need an invitation to use Com-Install Job Cards. Ask an Admin to invite you, then open the link in your invitation email.";
+  "You need an Invitation to use Com-Install Job Cards. Ask an Admin to invite you, then open the link in your invitation email.";
 
 type Env = Record<string, string | undefined>;
 

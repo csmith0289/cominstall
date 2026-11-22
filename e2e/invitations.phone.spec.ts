@@ -33,7 +33,7 @@ test("the Admin invites an Engineer, who accepts from the email on a phone-sized
   // The Admin sees the account, and the Invitation has gone from the pending list.
   await adminPage.reload();
   await expect(adminPage.getByRole("main")).toContainText("Phone Engineer");
-  await expect(adminPage.getByRole("button", { name: `Resend invitation to ${engineer}` })).toHaveCount(0);
+  await expect(adminPage.getByRole("button", { name: `Resend Invitation to ${engineer}` })).toHaveCount(0);
   await desk.close();
 
   // The link has been used.

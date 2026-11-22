@@ -34,7 +34,7 @@ export function InviteForm() {
       </label>
       <Messages state={state} />
       <button type="submit" disabled={pending}>
-        Send invitation
+        Send Invitation
       </button>
     </form>
   );
@@ -50,18 +50,18 @@ export function InvitationActions({ invitationId, email }: { invitationId: strin
       <div className="row">
         <form action={resendAction}>
           <input type="hidden" name="invitationId" value={invitationId} />
-          <button type="submit" className="secondary" disabled={busy} aria-label={`Resend invitation to ${email}`}>
+          <button type="submit" className="secondary" disabled={busy} aria-label={`Resend Invitation to ${email}`}>
             Resend
           </button>
         </form>
         <form
           action={cancelAction}
           onSubmit={(event) => {
-            if (!confirm(`Cancel the invitation to ${email}? Its link will stop working.`)) event.preventDefault();
+            if (!confirm(`Cancel the Invitation to ${email}? Its link will stop working.`)) event.preventDefault();
           }}
         >
           <input type="hidden" name="invitationId" value={invitationId} />
-          <button type="submit" className="secondary" disabled={busy} aria-label={`Cancel invitation to ${email}`}>
+          <button type="submit" className="secondary" disabled={busy} aria-label={`Cancel Invitation to ${email}`}>
             Cancel
           </button>
         </form>

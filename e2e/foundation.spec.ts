@@ -9,7 +9,7 @@ test("an uninvited email can't create an account", async ({ page }) => {
   await page.getByLabel("Password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
   // Inside main: Next.js adds its own empty role="alert" route announcer to every page.
-  await expect(page.getByRole("main").getByRole("alert")).toContainText("You need an invitation");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("You need an Invitation");
 });
 
 test("the first Admin signs up from ADMIN_EMAILS and sees the Admin area", async ({ page }) => {

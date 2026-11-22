@@ -26,7 +26,7 @@ test("an Admin invites an Admin, resends the Invitation, and only the new link w
   await sendInvitation(page, invitee, "Admin");
   const firstLink = await linkInEmail(invitee, INVITED);
 
-  await page.getByRole("button", { name: `Resend invitation to ${invitee}` }).click();
+  await page.getByRole("button", { name: `Resend Invitation to ${invitee}` }).click();
   await expect(page.getByRole("main").getByRole("status").filter({ hasText: "Invitation sent again" })).toBeVisible();
   const secondLink = await linkInEmail(invitee, INVITED, 2);
   expect(secondLink).not.toBe(firstLink);
@@ -52,8 +52,8 @@ test("an Admin cancels an Invitation, and its link stops working", async ({ page
   const link = await linkInEmail(invitee, INVITED);
 
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: `Cancel invitation to ${invitee}` }).click();
-  await expect(page.getByRole("button", { name: `Cancel invitation to ${invitee}` })).toHaveCount(0);
+  await page.getByRole("button", { name: `Cancel Invitation to ${invitee}` }).click();
+  await expect(page.getByRole("button", { name: `Cancel Invitation to ${invitee}` })).toHaveCount(0);
 
   await page.goto(link);
   await expect(page.getByRole("heading", { name: "Invitation link not valid" })).toBeVisible();
