@@ -206,3 +206,249 @@ td {
   padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--line);
 }
+
+/* The Job Card form, laid out like the paper card (docs/reference/job-card-v0.html). */
+.job-card {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.job-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.job-card-head h1 {
+  margin: 0;
+}
+
+.job-card-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.save-state {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0.5rem 0 1rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.save-saved {
+  color: var(--ok);
+}
+
+.save-saving {
+  color: var(--muted);
+}
+
+.save-offline,
+.save-error {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.job-card .grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--ink);
+  margin-bottom: 1.1rem;
+  background: #fff;
+}
+
+.job-card .cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.job-card .cell:nth-child(2n) {
+  border-right: 0;
+}
+
+.job-card .cell:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.job-card .cell > label {
+  background: #ececec;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 7px 10px 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+.job-card .cell > input {
+  border: 0;
+  border-radius: 0;
+  padding: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.job-card .cell > input[readonly] {
+  color: var(--ink);
+}
+
+.job-card input:focus,
+.job-card textarea:focus {
+  background-color: #fffbea;
+}
+
+.job-card .reg {
+  text-transform: uppercase;
+}
+
+.job-card .reg-cell {
+  gap: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
+.job-card .reg-cell > button,
+.job-card .reg-cell > .suggestions,
+.job-card .reg-cell > .hint,
+.job-card .reg-cell > .new-vehicle {
+  margin: 0 10px;
+}
+
+.suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.suggestions button {
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.new-vehicle {
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.new-vehicle h2,
+.new-vehicle h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.job-card .bar {
+  margin: 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 10px;
+}
+
+.job-card .lined {
+  border: 1px solid var(--ink);
+  border-top: 0;
+  margin-bottom: 1.1rem;
+  background: #fff;
+}
+
+.job-card .lined textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 252px;
+  border: 0;
+  border-radius: 0;
+  resize: vertical;
+  overflow: hidden;
+  line-height: 28px;
+  padding: 0 10px;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 27px, var(--line) 27px, var(--line) 28px);
+  background-attachment: local;
+}
+
+.job-card table.parts {
+  table-layout: fixed;
+  border: 1px solid var(--ink);
+  border-top: 0;
+  background: #fff;
+}
+
+.job-card table.parts th {
+  background: #ececec;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 8px 6px;
+}
+
+.job-card table.parts td {
+  border: 1px solid var(--ink);
+  padding: 0;
+}
+
+.job-card table.parts input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 6px;
+  background: transparent;
+}
+
+.job-card col.q {
+  width: 18%;
+}
+
+.job-card col.p {
+  width: 44%;
+}
+
+.job-card col.n {
+  width: 38%;
+}
+
+.job-card .add-row {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 10px;
+  background: none;
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+@media (max-width: 420px) {
+  .job-card .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .job-card .cell {
+    border-right: 0;
+  }
+
+  .job-card .cell:nth-last-child(2) {
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .job-card table.parts th {
+    font-size: 10px;
+  }
+}
