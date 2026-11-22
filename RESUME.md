@@ -15,7 +15,7 @@ Start here when you pick cominstall up again, from a new Claude session, a new d
 ## First time only
 
 1. Make sure the Claude GitHub app can access this repo.
-2. Create the labels, the brief and the 13 ticket issues: `bash scripts/seed-issues.sh` (needs `gh` signed in).
+2. Create the labels, the brief and the 13 ticket issues: `bash scripts/seed-issues.sh` (needs `gh` signed in). Done on 2026-11-22.
 3. Start the loop (below). Ticket 01 makes the copied foundation green first: the scaffold was written where packages couldn't be installed, so it has never been run.
 
 ## Start or resume the loop (on msi)
@@ -41,6 +41,6 @@ If you work a ticket by hand, stop the loop first so two agents never work at on
 
 ## Snapshot (2026-11-22)
 
-- Scaffold, spec, glossary, ADRs and 13 tickets written. Nothing run yet.
-- Next: seed the issues, then ticket 01.
+- Scaffold, spec, glossary, ADRs pushed. Brief is #1; tickets 01–13 are #2–#14 (01 `ready-for-agent`, the rest `blocked`). Nothing run yet.
+- Next: start the loop on msi for ticket 01 (#2).
 - Legal: the agreement (NDA + data processing), terms of use and privacy notice are drafted outside the repo; ticket 11 puts the final terms and privacy text into the app.
