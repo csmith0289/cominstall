@@ -1,5 +1,5 @@
 // Who may create an account. Sign-ups are invite-only for good: an email may sign up only if it's in ADMIN_EMAILS
-// (how the first Admin, Luke Smith, gets in) or has a pending Invitation. With ADMIN_EMAILS unset and no
+// (how the first Admin gets in) or has a pending Invitation. With ADMIN_EMAILS unset and no
 // Invitations, nobody can. Existing accounts are never affected.
 
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
