@@ -1,0 +1,16 @@
+# Dependencies and build output
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local PGlite database
+.data/
+
+# Test output
+test-results/
+playwright-report/
+.env*.local
+
+.claude/settings.local.json
+.scratch/loop-logs/

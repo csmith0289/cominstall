@@ -1,0 +1,6 @@
+# Netlify build settings. They override the ones in Netlify's dashboard. Same as Batch & Label.
+# `vercel-build` applies the Drizzle migrations to the database in DATABASE_URL, then runs `next build`.
+# Its name is left over from Vercel; it works on any host.
+[build]
+  command = "pnpm vercel-build"
+  publish = ".next"

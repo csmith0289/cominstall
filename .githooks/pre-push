@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Runs scripts/check.sh (the CI suite) before every push from this machine and blocks the push if it fails.
+# Enabled automatically by `pnpm install` (the "prepare" script sets core.hooksPath to .githooks).
+#
+# Skipped: on CI runners ($CI is set), when SKIP_LOCAL_CHECKS=1, and for pushes that only delete branches.
+# One-off bypass:  git push --no-verify
+set -euo pipefail
+
+if [ -n "${CI:-}" ] || [ "${SKIP_LOCAL_CHECKS:-}" = 1 ]; then
+  exit 0
+fi
+
+zero=0000000000000000000000000000000000000000
+head=$(git rev-parse HEAD)
+pushing=no
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  pushing=yes
+  if [ "$local_sha" != "$head" ]; then
+    echo "pre-push: you're pushing ${local_sha:0:7}, but ${head:0:7} is checked out, so the checks would test the wrong code." >&2
+    echo "Check out what you're pushing first, or bypass with: git push --no-verify" >&2
+    exit 1
+  fi
+done
+[ "$pushing" = yes ] || exit 0
+
+if ! git diff --quiet HEAD --; then
+  echo "pre-push: you have uncommitted changes, so the checks wouldn't test exactly what you're pushing." >&2
+  echo "Commit or stash them first, or bypass with: git push --no-verify" >&2
+  exit 1
+fi
+
+echo "pre-push: running the CI suite locally on ${head:0:7} (bypass with git push --no-verify)"
+if ! bash "$(git rev-parse --show-toplevel)/scripts/check.sh"; then
+  echo "pre-push: checks failed, so nothing was pushed." >&2
+  exit 1
+fi
