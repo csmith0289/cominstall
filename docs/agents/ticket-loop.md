@@ -50,7 +50,7 @@ The goal is the Com-Install Job Cards app in `.scratch/job-cards-v1/spec.md`, ru
 - **Vehicles link Job Cards to Parts:** filtering by reg shows every Job Card and every Part fitted, via `customers → vehicles → job_cards → job_card_parts`. No direct reg-to-parts table.
 - **Statuses:** Draft, Outstanding, Complete. Ask before adding more.
 - **Job Card PDF** follows the paper card's layout (logo, REG / DATE / CUSTOMER / MILEAGE grid, lined work description, QTY / PART / PART NO. table) and is sent from the phone's share menu, so it works on iPhone.
-- **Netlify builds are off until go-live** (`ignore = "exit 0"` in `netlify.toml`, 2026-11-22) to save Netlify credits. Don't remove it. Only ticket 12, once the user says the setup is done, deletes that line.
+- **Netlify only builds commits whose message contains `[deploy]`** (the `ignore` line in `netlify.toml`, 2026-11-22), to save Netlify credits. Never put `[deploy]` in a commit, PR or merge message yourself, and don't change that line. Deploys happen only when the user asks for one.
 - **Merging:** merge to `master` automatically once dev, PO review and QA pass and the local suite is green.
 
 ## The brief issue
