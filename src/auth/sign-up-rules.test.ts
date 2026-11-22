@@ -20,7 +20,7 @@ describe("roleForNewAccount", () => {
 
   it("makes an ADMIN_EMAILS address an Admin, in any case", async () => {
     const db = await createTestDatabase();
-    expect(await roleForNewAccount(db, "Luke@Example.test", { ADMIN_EMAILS: "luke@example.test" })).toBe("admin");
+    expect(await roleForNewAccount(db, "Pat@Example.test", { ADMIN_EMAILS: "pat@example.test" })).toBe("admin");
   });
 
   it("gives an invited email the Role on its Invitation", async () => {

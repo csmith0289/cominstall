@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { eq } from "drizzle-orm";
 import { getDatabase, type Database } from "@/db";
@@ -79,6 +79,13 @@ export function createAuth(
       // account. Covers the server action and a direct POST alike.
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path === "/sign-up/email") await roleOrRefuse(ctx.body?.email);
+        // A deactivated User's existing session is ended the first time it reaches Better Auth's API, so the endpoint
+        // then sees no session: get-session answers null, and anything needing a session answers 401.
+        const current = await getSessionFromCtx(ctx);
+        if ((current?.user as { deactivatedAt?: Date | null } | undefined)?.deactivatedAt) {
+          await ctx.context.internalAdapter.deleteUserSessions(current!.user.id);
+          ctx.context.session = null;
+        }
       }),
     },
     databaseHooks: {
@@ -97,8 +104,8 @@ export function createAuth(
       },
       session: {
         create: {
-          // A deactivated User can't sign in. Existing sessions are ended when they're deactivated (ticket 08) and
-          // refused by requireUser() in the meantime.
+          // A deactivated User can't sign in. Their existing sessions are ended by hooks.before above; ticket 08 also
+          // ends them at the moment of deactivation.
           before: async (session) => {
             const [found] = await db
               .select({ deactivatedAt: schema.user.deactivatedAt })

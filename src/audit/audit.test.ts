@@ -6,7 +6,7 @@ import { recordAudit } from "./index";
 describe("recordAudit", () => {
   it("records who did what, marking Operator changes", async () => {
     const db = await createTestDatabase();
-    await db.insert(user).values({ id: "u1", name: "Luke", email: "luke@example.test", role: "admin" });
+    await db.insert(user).values({ id: "u1", name: "Pat", email: "pat@example.test", role: "admin" });
 
     await recordAudit(db, { actorUserId: "u1", kind: "user_role_changed", subjectUserId: "u1", detail: { to: "admin" } });
     await recordAudit(db, { actorUserId: "u1", asOperator: true, kind: "job_card_reopened" });

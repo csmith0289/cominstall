@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "@/db/test-database";
-import { invitations, user } from "@/db/schema";
+import { invitations, session, user } from "@/db/schema";
 import { createMailer } from "@/email";
 import { ACCOUNT_DEACTIVATED_CODE, createAuth, SIGNUPS_CLOSED_MESSAGE } from "./index";
 
@@ -45,9 +45,9 @@ describe("invite-only sign-ups", () => {
   });
 
   it("makes an ADMIN_EMAILS address an Admin", async () => {
-    const { signUp, findUser } = await setUp({ adminEmails: "luke@example.test" });
-    await signUp("luke@example.test");
-    expect((await findUser("luke@example.test"))?.role).toBe("admin");
+    const { signUp, findUser } = await setUp({ adminEmails: "first-admin@example.test" });
+    await signUp("first-admin@example.test");
+    expect((await findUser("first-admin@example.test"))?.role).toBe("admin");
   });
 
   it("gives an invited email the Role on its Invitation, once", async () => {
@@ -86,9 +86,38 @@ describe("invite-only sign-ups", () => {
 
 describe("deactivated Users", () => {
   it("can't sign in", async () => {
-    const { db, signUp, signIn } = await setUp({ adminEmails: "luke@example.test" });
-    await signUp("luke@example.test");
-    await db.update(user).set({ deactivatedAt: new Date() }).where(eq(user.email, "luke@example.test"));
-    await expect(signIn("luke@example.test")).rejects.toMatchObject({ body: { code: ACCOUNT_DEACTIVATED_CODE } });
+    const { db, signUp, signIn } = await setUp({ adminEmails: "first-admin@example.test" });
+    await signUp("first-admin@example.test");
+    await db.update(user).set({ deactivatedAt: new Date() }).where(eq(user.email, "first-admin@example.test"));
+    await expect(signIn("first-admin@example.test")).rejects.toMatchObject({ body: { code: ACCOUNT_DEACTIVATED_CODE } });
+  });
+
+  it("can't use an existing session on Better Auth's own endpoints", async () => {
+    const { db, auth, findUser } = await setUp({ adminEmails: "first-admin@example.test" });
+    const { headers } = await auth.api.signUpEmail({
+      body: { name: "Pat Admin", email: "first-admin@example.test", password: "a long password 1" },
+      returnHeaders: true,
+    });
+    const cookie = headers
+      .getSetCookie()
+      .map((setCookie) => setCookie.split(";")[0])
+      .join("; ");
+    const call = (path: string, init: RequestInit = {}) =>
+      auth.handler(
+        new Request(`${APP_URL}/api/auth${path}`, {
+          ...init,
+          headers: { cookie, origin: APP_URL, "content-type": "application/json" },
+        }),
+      );
+    const firstAdmin = await findUser("first-admin@example.test");
+    await db.update(user).set({ deactivatedAt: new Date() }).where(eq(user.id, firstAdmin!.id));
+
+    const rename = await call("/update-user", { method: "POST", body: JSON.stringify({ name: "Renamed While Off" }) });
+    expect(rename.status).toBe(401);
+    expect((await findUser("first-admin@example.test"))?.name).toBe("Pat Admin");
+    expect((await call("/list-sessions")).status).toBe(401);
+    const getSession = await call("/get-session");
+    expect(await getSession.json()).toBeNull();
+    expect(await db.select().from(session).where(eq(session.userId, firstAdmin!.id))).toEqual([]);
   });
 });
