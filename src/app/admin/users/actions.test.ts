@@ -22,7 +22,8 @@ let db: Database;
 let sent: Email[] = [];
 
 vi.mock("next/headers", () => ({ headers: async () => requestHeaders }));
-vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+const { revalidatePath } = vi.hoisted(() => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("@/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/auth")>()),
   getAuth: async () => currentAuth,
@@ -51,6 +52,7 @@ beforeEach(async () => {
     env: { ADMIN_EMAILS: ADMIN },
   });
   requestHeaders = new Headers();
+  revalidatePath.mockClear();
 });
 
 // Signs up (the Engineer from an Invitation) and makes the next request carry that account's session cookie.
@@ -109,6 +111,20 @@ describe("Admin → Users actions", () => {
     expect(await resend({}, form({ invitationId: id }))).toHaveProperty("notice");
     expect(await cancel({}, form({ invitationId: id }))).toHaveProperty("notice");
     expect(sent.map((email) => email.to)).toEqual(["new.engineer@example.test", "invitee@example.test"]);
+  });
+
+  it("show a message, and keep the stale row on screen, when the Invitation is already gone", async () => {
+    await signUpAndUseSession(ADMIN);
+    const id = await pendingInvitationId();
+    expect(await cancel({}, form({ invitationId: id }))).toHaveProperty("notice");
+    revalidatePath.mockClear();
+
+    // A second tab still shows the cancelled Invitation. Refreshing the page would unmount the row that shows the message.
+    const gone = { error: "That Invitation has already been accepted or cancelled. Reload the page." };
+    expect(await resend({}, form({ invitationId: id }))).toEqual(gone);
+    expect(await cancel({}, form({ invitationId: id }))).toEqual(gone);
+    expect(revalidatePath).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
   });
 
   it("give an Engineer a 404 and change nothing", async () => {

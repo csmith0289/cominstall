@@ -60,6 +60,13 @@ test("an Admin cancels an Invitation, and its link stops working", async ({ page
   await expect(page.getByRole("main").getByRole("alert")).toContainText("contact an Admin");
 });
 
+test("a link with the token given twice says it isn't valid, rather than failing", async ({ page }) => {
+  const response = await page.goto("/invitation?token=a&token=b");
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Invitation link not valid" })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("contact an Admin");
+});
+
 test("an invited email can't sign up on the sign-up page without the link", async ({ page }, testInfo) => {
   await openUsersAsAdmin(page, testInfo.project.name);
   const invitee = uniqueEmail("no-link");

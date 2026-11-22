@@ -4,13 +4,15 @@ import { invitationForLink } from "@/invitations";
 import { invitationLinkMessage } from "@/invitations/messages";
 import { AcceptInvitationForm } from "../account-forms";
 
-type Props = { searchParams: Promise<Record<string, string | undefined>> };
+// A repeated query parameter (?token=a&token=b) arrives as an array.
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 const ROLE_NAMES = { engineer: "an Engineer", admin: "an Admin" } as const;
 
 // Opened from the link in the invitation email.
 export default async function InvitationPage({ searchParams }: Props) {
-  const { token = "" } = await searchParams;
+  const { token: param } = await searchParams;
+  const token = typeof param === "string" ? param : "";
   const link = await invitationForLink(await getDatabase(), token);
   if (link.state !== "pending") {
     return (

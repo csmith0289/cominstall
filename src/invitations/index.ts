@@ -143,9 +143,9 @@ export type LinkState =
   // Accepted, cancelled, replaced by a resend, or never issued: all read the same to the person holding it.
   | { state: "used" };
 
-// What an invitation link leads to.
-export async function invitationForLink(db: Database, token: string, now = new Date()): Promise<LinkState> {
-  if (!token) return { state: "used" };
+// What an invitation link leads to. The token comes straight from the URL, so it may be missing or repeated (an array).
+export async function invitationForLink(db: Database, token: string | string[] | undefined, now = new Date()): Promise<LinkState> {
+  if (typeof token !== "string" || !token) return { state: "used" };
   const [found] = await db.select().from(invitations).where(eq(invitations.tokenHash, hashInvitationToken(token)));
   if (!found || found.acceptedAt || found.cancelledAt) return { state: "used" };
   if (found.expiresAt <= now) return { state: "expired" };

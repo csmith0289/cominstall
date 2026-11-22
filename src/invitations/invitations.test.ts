@@ -136,6 +136,13 @@ describe("invitationForLink", () => {
 
     for (const token of [accepted, cancelled, "made-up", ""]) expect(await invitationForLink(db, token)).toEqual({ state: "used" });
   });
+
+  it("says a link is used, rather than failing, when the token is repeated or missing", async () => {
+    const { db, sending, lastToken } = await setUp();
+    await inviteUser(db, { ...sending, email: "eng@example.test", role: "engineer" });
+    // What searchParams gives for /invitation?token=a&token=b, and for no token at all.
+    for (const token of [[lastToken(), "b"], ["a", "b"], undefined]) expect(await invitationForLink(db, token)).toEqual({ state: "used" });
+  });
 });
 
 describe("resendInvitation", () => {

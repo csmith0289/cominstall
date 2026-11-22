@@ -27,15 +27,16 @@ export async function invite(_state: InvitationFormState, form: FormData): Promi
 export async function resend(_state: InvitationFormState, form: FormData): Promise<InvitationFormState> {
   const admin = await requireAdmin();
   const result = await resendInvitation(await getDatabase(), { ...sending(admin.id), invitationId: String(form.get("invitationId") ?? "") });
-  revalidatePath("/admin/users");
+  // On an error, don't refresh: the refresh would remove the stale row, and the message with it.
   if ("error" in result) return { error: result.error };
+  revalidatePath("/admin/users");
   return { notice: `Invitation sent again, with a new link that works for 7 days. The old link no longer works. ${EMAIL_NOTE}` };
 }
 
 export async function cancel(_state: InvitationFormState, form: FormData): Promise<InvitationFormState> {
   const admin = await requireAdmin();
   const result = await cancelInvitation(await getDatabase(), { actorUserId: admin.id, invitationId: String(form.get("invitationId") ?? "") });
-  revalidatePath("/admin/users");
   if ("error" in result) return { error: result.error };
+  revalidatePath("/admin/users");
   return { notice: "Invitation cancelled. Its link no longer works." };
 }
