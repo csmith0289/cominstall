@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuth, type Auth } from "@/auth";
+import { hashInvitationToken } from "@/auth/sign-up-rules";
 import type { Database } from "@/db";
 import { invitations, user } from "@/db/schema";
 import { createMailer } from "@/email";
@@ -41,16 +42,17 @@ beforeEach(async () => {
 
 // Signs up and makes the next request carry that account's session cookie.
 async function signUpAndUseSession(email: string) {
+  const invitationToken = crypto.randomUUID();
   if (email !== ADMIN) {
     await db.insert(invitations).values({
       email,
       role: "engineer",
-      tokenHash: crypto.randomUUID(),
+      tokenHash: hashInvitationToken(invitationToken),
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
   }
   const { headers } = await currentAuth.api.signUpEmail({
-    body: { name: "Sam Test", email, password: PASSWORD },
+    body: { name: "Sam Test", email, password: PASSWORD, ...(email !== ADMIN && { invitationToken }) },
     returnHeaders: true,
   });
   const cookie = headers

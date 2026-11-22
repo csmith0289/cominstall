@@ -1,4 +1,4 @@
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -24,6 +24,19 @@ describe("createMailer", () => {
     expect(fetch).not.toHaveBeenCalled();
     expect(await readOutbox(outboxDir)).toEqual([expect.objectContaining(email)]);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("Open this link: https://x/y"));
+  });
+
+  it("still logs the whole email, and doesn't fail, when the outbox folder can't be written (Netlify)", async () => {
+    // A folder inside a file can never be created, on any platform.
+    const blocker = join(await mkdtemp(join(tmpdir(), "outbox-")), "a-file");
+    await writeFile(blocker, "not a folder");
+    const log = vi.fn();
+    const send = createMailer({ env: { EMAIL_OUTBOX_DIR: join(blocker, "outbox") }, fetch: failingFetch(), log });
+
+    await expect(send(email)).resolves.toBeUndefined();
+
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Open this link: https://x/y"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(email.to));
   });
 
   it("needs both RESEND_API_KEY and EMAIL_FROM before it uses Resend", async () => {

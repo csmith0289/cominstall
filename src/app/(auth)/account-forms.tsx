@@ -1,7 +1,31 @@
 "use client";
 
 import { useActionState } from "react";
-import { requestPasswordReset, resendConfirmation, resetPassword } from "./actions";
+import { acceptInvitation, requestPasswordReset, resendConfirmation, resetPassword } from "./actions";
+
+export function AcceptInvitationForm({ token, email }: { token: string; email: string }) {
+  const [state, formAction, pending] = useActionState(acceptInvitation, {});
+  return (
+    <form action={formAction} className="stack">
+      <input type="hidden" name="token" value={token} />
+      {/* Lets password managers save the new password against the right email. */}
+      <input type="hidden" name="email" value={email} autoComplete="username" />
+      <label>
+        Your name
+        <input name="name" required maxLength={100} autoComplete="name" />
+      </label>
+      <label>
+        Choose a password
+        <input name="password" type="password" required minLength={8} autoComplete="new-password" />
+      </label>
+      <p className="muted">At least 8 characters.</p>
+      {state.error && <p role="alert" className="error">{state.error}</p>}
+      <button type="submit" disabled={pending}>
+        Create account
+      </button>
+    </form>
+  );
+}
 
 export function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(requestPasswordReset, {});

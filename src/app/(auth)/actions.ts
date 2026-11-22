@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { CONFIRM_EMAIL_PATH, getAuth, resendConfirmationLink } from "@/auth";
 import { getDatabase } from "@/db";
+import { invitationForLink } from "@/invitations";
+import { invitationLinkMessage } from "@/invitations/messages";
 import { getSignedInUser } from "../session";
 import { authErrorMessage } from "./error-messages";
 
@@ -27,6 +29,24 @@ export async function signUp(_state: AuthFormState, form: FormData): Promise<Aut
       },
       headers: await headers(),
     });
+  } catch (error) {
+    return { error: authErrorMessage(error, "Couldn't create your account.") };
+  }
+  redirect("/");
+}
+
+// Opened from the invitation email: creates the account with the Invitation's email and Role, and signs them in.
+export async function acceptInvitation(_state: AuthFormState, form: FormData): Promise<AuthFormState> {
+  const name = String(form.get("name") ?? "").trim();
+  if (!name) return { error: "Enter your name." };
+  if (name.length > 100) return { error: "Use a shorter name (100 characters at most)." };
+  const invitationToken = String(form.get("token") ?? "");
+  const link = await invitationForLink(await getDatabase(), invitationToken);
+  if (link.state !== "pending") return { error: invitationLinkMessage(link.state) };
+  // Better Auth passes body fields it doesn't know to the hooks in src/auth, which read the token there.
+  const body = { name, email: link.invitation.email, password: String(form.get("password") ?? ""), invitationToken };
+  try {
+    await (await getAuth()).api.signUpEmail({ body, headers: await headers() });
   } catch (error) {
     return { error: authErrorMessage(error, "Couldn't create your account.") };
   }

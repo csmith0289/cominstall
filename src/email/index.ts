@@ -30,12 +30,19 @@ export function createMailer({
     };
   }
   const outboxDir = env.EMAIL_OUTBOX_DIR || DEFAULT_OUTBOX_DIR;
+  // The log line comes first and holds the whole email, link included: without Resend, it's how links reach people
+  // (copied out of the function logs). The outbox file is a convenience for development and e2e; where the
+  // filesystem is read-only (Netlify) writing it fails, and that failure is ignored.
   return async (email) => {
     log(`Email (not sent; Resend isn't set up) to ${email.to}: ${email.subject}\n${email.text}`);
-    await mkdir(outboxDir, { recursive: true });
-    const sentAt = new Date().toISOString();
-    const file = `${sentAt.replace(/[:.]/g, "-")}-${randomUUID()}.json`;
-    await writeFile(join(outboxDir, file), JSON.stringify({ ...email, sentAt }, null, 2));
+    try {
+      await mkdir(outboxDir, { recursive: true });
+      const sentAt = new Date().toISOString();
+      const file = `${sentAt.replace(/[:.]/g, "-")}-${randomUUID()}.json`;
+      await writeFile(join(outboxDir, file), JSON.stringify({ ...email, sentAt }, null, 2));
+    } catch {
+      // Read-only filesystem: the log line above already has everything.
+    }
   };
 }
 
