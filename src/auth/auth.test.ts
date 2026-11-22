@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { createTestDatabase } from "@/db/test-database";
-import { invitations, session, user } from "@/db/schema";
-import { createMailer } from "@/email";
+import { auditLog, invitations, session, user } from "@/db/schema";
+import { createMailer, readOutbox } from "@/email";
 import { ACCOUNT_DEACTIVATED_CODE, createAuth, SIGNUPS_CLOSED_MESSAGE } from "./index";
+import { hashInvitationToken } from "./sign-up-rules";
 
 const APP_URL = "http://localhost:3000";
 
@@ -21,18 +22,24 @@ async function setUp({ adminEmails }: { adminEmails?: string } = {}) {
     mailer: createMailer({ env: { EMAIL_OUTBOX_DIR: outboxDir }, fetch, log: () => {} }),
     env: { ADMIN_EMAILS: adminEmails },
   });
-  const signUp = (email: string, password = "a long password 1") =>
-    auth.api.signUpEmail({ body: { name: "Sam Engineer", email, password, callbackURL: "/confirm-email" } });
+  const signUp = (email: string, invitationToken?: string) =>
+    auth.api.signUpEmail({
+      body: { name: "Sam Engineer", email, password: "a long password 1", callbackURL: "/confirm-email", ...(invitationToken && { invitationToken }) },
+    });
   const signIn = (email: string, password = "a long password 1") => auth.api.signInEmail({ body: { email, password } });
   const findUser = async (email: string) => (await db.select().from(user).where(eq(user.email, email)))[0];
-  const invite = (email: string, role: "engineer" | "admin" = "engineer") =>
-    db.insert(invitations).values({
+  // Returns the token the invitation link would carry.
+  const invite = async (email: string, role: "engineer" | "admin" = "engineer") => {
+    const token = crypto.randomUUID();
+    await db.insert(invitations).values({
       email,
       role,
-      tokenHash: crypto.randomUUID(),
+      tokenHash: hashInvitationToken(token),
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
-  return { db, auth, signUp, signIn, findUser, invite };
+    return token;
+  };
+  return { db, auth, signUp, signIn, findUser, invite, outboxDir };
 }
 
 const refused = { status: "FORBIDDEN", body: { code: "SIGNUPS_CLOSED", message: SIGNUPS_CLOSED_MESSAGE } };
@@ -52,9 +59,50 @@ describe("invite-only sign-ups", () => {
 
   it("gives an invited email the Role on its Invitation, once", async () => {
     const { signUp, findUser, invite } = await setUp();
-    await invite("eng@example.test", "engineer");
-    await signUp("eng@example.test");
+    const token = await invite("eng@example.test", "engineer");
+    await signUp("eng@example.test", token);
     expect((await findUser("eng@example.test"))?.role).toBe("engineer");
+    await expect(signUp("eng@example.test", token)).rejects.toMatchObject({ status: "FORBIDDEN" });
+  });
+
+  it("makes an email invited as an Admin an Admin", async () => {
+    const { signUp, findUser, invite } = await setUp();
+    await signUp("boss@example.test", await invite("boss@example.test", "admin"));
+    expect((await findUser("boss@example.test"))?.role).toBe("admin");
+  });
+
+  it("refuses an invited email that comes without its invitation link", async () => {
+    const { signUp, findUser, invite } = await setUp();
+    await invite("eng@example.test");
+    await expect(signUp("eng@example.test")).rejects.toMatchObject(refused);
+    await expect(signUp("eng@example.test", "made-up-token")).rejects.toMatchObject(refused);
+    expect(await findUser("eng@example.test")).toBeUndefined();
+  });
+
+  it("confirms the email of someone who signs up from their invitation link, and sends no confirmation link", async () => {
+    const { db, signUp, findUser, invite, outboxDir } = await setUp();
+    await signUp("eng@example.test", await invite("eng@example.test"));
+    const created = await findUser("eng@example.test");
+    expect(created?.emailVerified).toBe(true);
+    expect(await readOutbox(outboxDir)).toEqual([]);
+    const [invitation] = await db.select().from(invitations).where(eq(invitations.email, "eng@example.test"));
+    expect(invitation?.acceptedAt).toBeInstanceOf(Date);
+    const entries = await db.select().from(auditLog);
+    expect(entries).toEqual([
+      expect.objectContaining({
+        kind: "invitation_accepted",
+        actorUserId: created!.id,
+        subjectUserId: created!.id,
+        detail: expect.objectContaining({ invitationId: invitation!.id, role: "engineer" }),
+      }),
+    ]);
+  });
+
+  it("still asks an ADMIN_EMAILS address to confirm its email", async () => {
+    const { signUp, findUser, outboxDir } = await setUp({ adminEmails: "first-admin@example.test" });
+    await signUp("first-admin@example.test");
+    expect((await findUser("first-admin@example.test"))?.emailVerified).toBe(false);
+    expect(await readOutbox(outboxDir)).toEqual([expect.objectContaining({ subject: expect.stringContaining("Confirm") })]);
   });
 
   it("refuses a direct POST to Better Auth's sign-up endpoint", async () => {
@@ -72,12 +120,12 @@ describe("invite-only sign-ups", () => {
 
   it("never takes a Role from the request", async () => {
     const { auth, findUser, invite } = await setUp();
-    await invite("eng@example.test", "engineer");
+    const invitationToken = await invite("eng@example.test", "engineer");
     await auth.handler(
       new Request(`${APP_URL}/api/auth/sign-up/email`, {
         method: "POST",
         headers: { "content-type": "application/json", origin: APP_URL },
-        body: JSON.stringify({ name: "Eng", email: "eng@example.test", password: "a long password 1", role: "admin" }),
+        body: JSON.stringify({ name: "Eng", email: "eng@example.test", password: "a long password 1", role: "admin", invitationToken }),
       }),
     );
     expect((await findUser("eng@example.test"))?.role).toBe("engineer");

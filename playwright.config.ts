@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { E2E_ADMIN_EMAIL, E2E_OPERATOR_EMAIL, E2E_PHONE_ADMIN_EMAILS } from "./e2e/accounts";
+import { E2E_ADMIN_EMAIL, E2E_INVITING_ADMIN_EMAILS, E2E_OPERATOR_EMAIL, E2E_PHONE_ADMIN_EMAILS } from "./e2e/accounts";
 
 const port = 3100;
 const baseURL = `http://localhost:${port}`;
@@ -45,7 +45,7 @@ export default defineConfig({
       RESEND_API_KEY: "",
       EMAIL_FROM: "",
       EMAIL_OUTBOX_DIR: ".data/e2e-outbox",
-      ADMIN_EMAILS: [E2E_ADMIN_EMAIL, ...E2E_PHONE_ADMIN_EMAILS].join(","),
+      ADMIN_EMAILS: [E2E_ADMIN_EMAIL, ...E2E_PHONE_ADMIN_EMAILS, ...E2E_INVITING_ADMIN_EMAILS].join(","),
       OPERATOR_EMAILS: E2E_OPERATOR_EMAIL,
     },
   },

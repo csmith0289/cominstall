@@ -14,11 +14,11 @@ describe("authErrorMessage", () => {
     );
   });
 
-  it("tells an uninvited email it needs an invitation", () => {
+  it("tells an uninvited email it needs an Invitation", () => {
     const error = new APIError("FORBIDDEN", { code: "SIGNUPS_CLOSED", message: "Sign-ups are closed." });
 
     expect(authErrorMessage(error, "Couldn't create your account.")).toBe(
-      "You need an invitation to use Com-Install Job Cards. Ask an Admin to invite you, then use the email address the invitation went to.",
+      "You need an Invitation to use Com-Install Job Cards. Ask an Admin to invite you, then open the link in your invitation email.",
     );
   });
 

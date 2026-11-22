@@ -15,7 +15,10 @@ export default async function SignInPage({ searchParams }: Props) {
         <Link href="/forgot-password">Forgot your password?</Link>
       </p>
       <p>
-        Been invited? <Link href="/sign-up">Create your account</Link>
+        Been invited? Open the link in your invitation email to set up your account.
+      </p>
+      <p className="muted">
+        Setting up the app as its first Admin? <Link href="/sign-up">Create your account</Link>
       </p>
     </main>
   );

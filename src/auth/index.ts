@@ -8,8 +8,10 @@ import { getDatabase, type Database } from "@/db";
 import * as schema from "@/db/schema";
 import { createMailer, type Mailer } from "@/email";
 import { ACCOUNT_DEACTIVATED_CODE, ACCOUNT_DEACTIVATED_MESSAGE } from "./deactivated";
+import { markInvitationAccepted } from "@/invitations";
 import { confirmEmailMessage, passwordResetMessage } from "./emails";
-import { acceptInvitation, roleForNewAccount, SIGNUPS_CLOSED_CODE, SIGNUPS_CLOSED_MESSAGE } from "./sign-up-rules";
+import { isListedEmail } from "./listed-email";
+import { roleForNewAccount, SIGNUPS_CLOSED_CODE, SIGNUPS_CLOSED_MESSAGE } from "./sign-up-rules";
 
 export { SIGNUPS_CLOSED_MESSAGE } from "./sign-up-rules";
 export { ACCOUNT_DEACTIVATED_CODE, ACCOUNT_DEACTIVATED_MESSAGE } from "./deactivated";
@@ -28,11 +30,11 @@ export function createAuth(
   db: Database,
   { appUrl = process.env.BETTER_AUTH_URL, mailer = createMailer(), env = process.env }: Options = {},
 ) {
-  // The Role a new account gets; refuses an email with no Invitation that isn't in ADMIN_EMAILS. A missing or
-  // non-string email is left to Better Auth's own validation, which answers 400.
-  const roleOrRefuse = async (email: unknown) => {
+  // The Role a new account gets; refuses an email that isn't in ADMIN_EMAILS and doesn't bring the token from its
+  // pending Invitation. A missing or non-string email is left to Better Auth's own validation, which answers 400.
+  const roleOrRefuse = async (email: unknown, invitationToken: string | undefined) => {
     if (typeof email !== "string") return null;
-    const role = await roleForNewAccount(db, email, env);
+    const role = await roleForNewAccount(db, email, env, new Date(), invitationToken);
     if (!role) throw new APIError("FORBIDDEN", { code: SIGNUPS_CLOSED_CODE, message: SIGNUPS_CLOSED_MESSAGE });
     return role;
   };
@@ -70,6 +72,8 @@ export function createAuth(
       sendOnSignUp: true,
       expiresIn: LINK_LIFETIME_SECONDS,
       sendVerificationEmail: async ({ user, url }) => {
+        // Someone who signed up from their invitation link has already shown the email is theirs.
+        if (user.emailVerified) return;
         await recordConfirmationLinkSent(db, user.id);
         await send(user.email, confirmEmailMessage(url));
       },
@@ -78,7 +82,7 @@ export function createAuth(
       // Before Better Auth looks the email up, so an uninvited address gets the same refusal whether or not it has an
       // account. Covers the server action and a direct POST alike.
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path === "/sign-up/email") await roleOrRefuse(ctx.body?.email);
+        if (ctx.path === "/sign-up/email") await roleOrRefuse(ctx.body?.email, invitationTokenIn(ctx.body));
         // A deactivated User's existing session is ended the first time it reaches Better Auth's API, so the endpoint
         // then sees no session: get-session answers null, and anything needing a session answers 401.
         const current = await getSessionFromCtx(ctx);
@@ -92,13 +96,16 @@ export function createAuth(
       user: {
         create: {
           // Sets the Role from ADMIN_EMAILS or the Invitation, and refuses anyone else: a backstop for any way an
-          // account could be created.
-          before: async (user) => {
-            const role = await roleOrRefuse(user.email);
-            return { data: { ...user, role: role ?? "engineer" } };
+          // account could be created. The invitation link went to this email, so bringing its token confirms it.
+          before: async (user, ctx) => {
+            const token = invitationTokenIn(ctx?.body);
+            const role = await roleOrRefuse(user.email, token);
+            const invited = !!token && !isListedEmail(user.email, env.ADMIN_EMAILS);
+            return { data: { ...user, role: role ?? "engineer", ...(invited && { emailVerified: true }) } };
           },
-          after: async (user) => {
-            await acceptInvitation(db, user.email);
+          after: async (user, ctx) => {
+            const token = invitationTokenIn(ctx?.body);
+            if (token) await markInvitationAccepted(db, { token, userId: user.id });
           },
         },
       },
@@ -124,6 +131,12 @@ export function createAuth(
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+// The invitation token a sign-up brings in its body (the invitation page's form), if any.
+function invitationTokenIn(body: unknown): string | undefined {
+  const token = (body as { invitationToken?: unknown } | null | undefined)?.invitationToken;
+  return typeof token === "string" && token ? token : undefined;
+}
 
 // The time of the last confirmation link, kept in Better Auth's verification table so it holds across servers.
 const sentMarker = (userId: string) => `confirmation-link-sent:${userId}`;
