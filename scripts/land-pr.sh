@@ -72,12 +72,14 @@ fi
 if [ -n "$name" ]; then
   # Master's migration history wins; the branch's migrations are rebuilt from its schema.
   git rm -r -q -f drizzle/
-  git checkout -q origin/master -- drizzle/
-  before=$(ls drizzle/*.sql | wc -l)
+  # Master may have no migrations yet (the first ticket), so neither step may fail on a missing drizzle/.
+  if [ -n "$(git ls-tree --name-only origin/master -- drizzle/)" ]; then git checkout -q origin/master -- drizzle/; fi
+  count_sql() { { find drizzle -maxdepth 1 -name '*.sql' 2>/dev/null || true; } | wc -l; }
+  before=$(count_sql)
   pnpm install --frozen-lockfile >/dev/null
   # stdin from /dev/null: if drizzle-kit wants to ask about a rename it fails instead of hanging.
   pnpm db:generate --name "$name" </dev/null || fail "drizzle-kit generate failed (a rename question needs a human?)"
-  after=$(ls drizzle/*.sql | wc -l)
+  after=$(count_sql)
   [ "$after" -gt "$before" ] || fail "regenerating produced no migration for '$name', but the branch had one"
   git add -A drizzle/
 fi
