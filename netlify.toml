@@ -4,3 +4,8 @@
 [build]
   command = "pnpm vercel-build"
   publish = ".next"
+  # Netlify only builds a commit whose message contains [deploy], so the ticket loop's merges don't use credits.
+  # The ignore command exiting 0 means "skip this build"; exiting 1 means "build it".
+  # To deploy: push a commit with [deploy] in its message (e.g. `git commit --allow-empty -m "[deploy] Go live"`).
+  # To build every commit again, delete this line.
+  ignore = "git log -1 --pretty=%B | grep -qF '[deploy]' && exit 1 || exit 0"
