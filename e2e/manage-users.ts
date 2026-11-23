@@ -2,6 +2,7 @@ import { expect, type Browser, type BrowserContextOptions, type Page } from "@pl
 import { E2E_PASSWORD } from "./accounts";
 import { sendInvitation, uniqueEmail } from "./invitations";
 import { linkInEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 // The Admin (already on Admin → Users) invites an Engineer, who accepts in a browser of their own and lands on My Jobs.
 // Names are invented and made unique, so each run finds its own row.
@@ -16,6 +17,7 @@ export async function inviteEngineer(adminPage: Page, browser: Browser, label: s
   await page.getByLabel("Your name").fill(name);
   await page.getByLabel("Choose a password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(page);
   await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
   return { email, name, context, page };
 }

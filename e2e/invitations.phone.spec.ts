@@ -2,6 +2,7 @@ import { devices, expect, test } from "@playwright/test";
 import { E2E_PASSWORD } from "./accounts";
 import { openUsersAsAdmin, sendInvitation, uniqueEmail } from "./invitations";
 import { linkInEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 test("the Admin invites an Engineer, who accepts from the email on a phone-sized screen", async ({ browser, page }, testInfo) => {
   const engineer = uniqueEmail(`engineer-${testInfo.project.name}`);
@@ -24,6 +25,7 @@ test("the Admin invites an Engineer, who accepts from the email on a phone-sized
   await page.getByLabel("Your name").fill("Phone Engineer");
   await page.getByLabel("Choose a password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(page);
 
   // Signed in as an Engineer, email already confirmed.
   await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();

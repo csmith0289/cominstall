@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { E2E_ADMIN_EMAIL, E2E_PASSWORD } from "./accounts";
 import { confirmEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 test("an uninvited email can't create an account", async ({ page }) => {
   await page.goto("/sign-up");
@@ -18,6 +19,7 @@ test("the first Admin signs up from ADMIN_EMAILS and sees the Admin area", async
   await page.getByLabel("Email").fill(E2E_ADMIN_EMAIL);
   await page.getByLabel("Password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(page);
   await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
   await confirmEmail(page, E2E_ADMIN_EMAIL);
   await page.getByRole("link", { name: "Admin" }).click();

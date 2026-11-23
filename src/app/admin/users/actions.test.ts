@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { auditLog, invitations, jobCards, session, user } from "@/db/schema";
 import type { Email } from "@/email";
 import { createTestDatabase } from "@/db/test-database";
+import { TERMS_VERSION } from "@/legal";
 
 // Invented test accounts, never real people.
 const APP_URL = "http://localhost:3000";
@@ -79,6 +80,8 @@ async function signUpAndUseSession(email: string, name = "Sam Test") {
       .map((setCookie) => setCookie.split(";")[0])
       .join("; "),
   });
+  // These tests are about Users who have already accepted the terms of use.
+  await db.update(user).set({ termsVersion: TERMS_VERSION, termsAcceptedAt: new Date() }).where(eq(user.email, email));
 }
 
 const form = (fields: Record<string, string>) => {

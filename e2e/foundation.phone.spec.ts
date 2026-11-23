@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { E2E_PASSWORD, phoneAdminEmail } from "./accounts";
+import { acceptTerms } from "./terms";
 
 async function sidewaysOverflow(page: Page) {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -17,6 +18,7 @@ test("the signed-in header fits a phone screen, with every link in reach", async
   await page.getByLabel("Email").fill(phoneAdminEmail(testInfo.project.name));
   await page.getByLabel("Password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(page);
   await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
 
   const header = page.getByRole("banner");

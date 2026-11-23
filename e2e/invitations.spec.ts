@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { E2E_PASSWORD, invitingAdminEmail } from "./accounts";
 import { openUsersAsAdmin, sendInvitation, uniqueEmail } from "./invitations";
 import { countEmails, linkInEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 const INVITED = /invited to Com-Install Job Cards/;
 
@@ -41,6 +42,7 @@ test("an Admin invites an Admin, resends the Invitation, and only the new link w
   await phone.getByLabel("Your name").fill("New Admin");
   await phone.getByLabel("Choose a password").fill(E2E_PASSWORD);
   await phone.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(phone);
   await expect(phone.getByRole("banner").getByRole("link", { name: "Admin" })).toBeVisible();
   await invitee_.close();
 });
