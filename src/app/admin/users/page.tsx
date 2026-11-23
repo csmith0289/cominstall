@@ -1,23 +1,29 @@
 import Link from "next/link";
-import { asc } from "drizzle-orm";
 import { getDatabase } from "@/db";
-import { user } from "@/db/schema";
 import { openInvitations } from "@/invitations";
+import { activeEngineers, listUsers } from "@/users";
 import { requireAdmin } from "../../session";
-import { InvitationActions, InviteForm } from "./forms";
+import { InvitationActions, InviteForm, UserActions } from "./forms";
 
 const ROLE_LABELS = { engineer: "Engineer", admin: "Admin" } as const;
 
 const dateFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/London" });
 
-// Admin → Users: invite Users and look after pending Invitations. Ticket 08 adds changing Roles and deactivating.
+const signInFormat = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Europe/London",
+});
+
+// Admin → Users: invite Users, look after pending Invitations, change Roles, deactivate and reactivate Users, and move
+// a deactivated User's Job Cards to another Engineer. The Operator's account isn't shown.
 export default async function UsersPage() {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const db = await getDatabase();
-  const [pending, users] = await Promise.all([
-    openInvitations(db),
-    db.select({ id: user.id, name: user.name, email: user.email, role: user.role }).from(user).orderBy(asc(user.name)),
-  ]);
+  const [pending, users, engineers] = await Promise.all([openInvitations(db), listUsers(db), activeEngineers(db)]);
   const now = new Date();
   return (
     <main>
@@ -64,10 +70,22 @@ export default async function UsersPage() {
         <h2>Everyone with an account</h2>
         <ul className="cards">
           {users.map((account) => (
-            <li key={account.id} className="card wrap">
-              <strong>{account.name}</strong>
-              <br />
-              {account.email} · {ROLE_LABELS[account.role]}
+            <li key={account.id} className="card" aria-label={account.name}>
+              <p className="wrap">
+                <strong>{account.name}</strong>
+                {account.id === admin.id && <span className="muted"> (you)</span>}
+                <br />
+                {account.email}
+                <br />
+                {ROLE_LABELS[account.role]} ·{" "}
+                {account.active ? <span className="status-ok">Active</span> : <span className="status-pending">Deactivated</span>}
+                <br />
+                <span className="muted">
+                  Last sign-in: {account.lastSignInAt ? signInFormat.format(account.lastSignInAt) : "never"} · {account.jobCards} Job Card
+                  {account.jobCards === 1 ? "" : "s"}
+                </span>
+              </p>
+              <UserActions account={account} isSelf={account.id === admin.id} engineers={engineers} />
             </li>
           ))}
         </ul>

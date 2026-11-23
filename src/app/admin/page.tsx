@@ -9,7 +9,7 @@ export default async function AdminPage() {
       <h1>Admin</h1>
       <ul>
         <li>
-          <Link href="/admin/users">Users</Link>: invite Engineers and Admins.
+          <Link href="/admin/users">Users</Link>: invite Engineers and Admins, change Roles, and deactivate or reactivate Users.
         </li>
       </ul>
       <p className="muted">Job Card counts and all Job Cards will appear here.</p>

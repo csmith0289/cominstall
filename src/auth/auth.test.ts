@@ -169,3 +169,17 @@ describe("deactivated Users", () => {
     expect(await db.select().from(session).where(eq(session.userId, firstAdmin!.id))).toEqual([]);
   });
 });
+
+describe("last sign-in", () => {
+  it("is recorded at sign-up and again at each sign-in", async () => {
+    const { db, signUp, signIn, findUser } = await setUp({ adminEmails: "first-admin@example.test" });
+    await signUp("first-admin@example.test");
+    const atSignUp = (await findUser("first-admin@example.test"))!.lastSignInAt;
+    expect(atSignUp).toBeInstanceOf(Date);
+
+    const longAgo = new Date("2026-01-01T00:00:00Z");
+    await db.update(user).set({ lastSignInAt: longAgo }).where(eq(user.email, "first-admin@example.test"));
+    await signIn("first-admin@example.test");
+    expect((await findUser("first-admin@example.test"))!.lastSignInAt!.getTime()).toBeGreaterThan(longAgo.getTime());
+  });
+});

@@ -54,6 +54,7 @@ export function createAuth(
       additionalFields: {
         role: { type: "string", required: false, defaultValue: "engineer", input: false },
         deactivatedAt: { type: "date", required: false, input: false },
+        lastSignInAt: { type: "date", required: false, input: false },
         termsVersion: { type: "string", required: false, input: false },
         termsAcceptedAt: { type: "date", required: false, input: false },
       },
@@ -111,8 +112,8 @@ export function createAuth(
       },
       session: {
         create: {
-          // A deactivated User can't sign in. Their existing sessions are ended by hooks.before above; ticket 08 also
-          // ends them at the moment of deactivation.
+          // A deactivated User can't sign in. Deactivating ends their sessions at once (src/users); hooks.before above
+          // is the backstop for any session that slips through.
           before: async (session) => {
             const [found] = await db
               .select({ deactivatedAt: schema.user.deactivatedAt })
@@ -121,6 +122,10 @@ export function createAuth(
             if (found?.deactivatedAt) {
               throw new APIError("FORBIDDEN", { code: ACCOUNT_DEACTIVATED_CODE, message: ACCOUNT_DEACTIVATED_MESSAGE });
             }
+          },
+          // Every new session is a sign-in (including the one a sign-up starts), shown on Admin → Users.
+          after: async (session) => {
+            await db.update(schema.user).set({ lastSignInAt: session.createdAt ?? new Date() }).where(eq(schema.user.id, session.userId));
           },
         },
       },
