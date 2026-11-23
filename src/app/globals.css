@@ -163,7 +163,24 @@ select {
 .row {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
   gap: 0.5rem;
+}
+
+/* A label beside its control, for short controls in a row. */
+label.inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  max-width: 100%;
 }
 
 .cards {

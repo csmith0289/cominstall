@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef } from "react";
-import { cancel, invite, resend, type InvitationFormState } from "./actions";
+import { cancel, changeUserRole, deactivate, invite, moveJobCards, reactivate, resend, type InvitationFormState } from "./actions";
 
 function Messages({ state }: { state: InvitationFormState }) {
   return (
@@ -37,6 +37,75 @@ export function InviteForm() {
         Send Invitation
       </button>
     </form>
+  );
+}
+
+type Row = { id: string; name: string; role: "engineer" | "admin"; active: boolean; jobCards: number };
+
+// Role, deactivate or reactivate, and moving a deactivated User's Job Cards, for one User.
+export function UserActions({ account, isSelf, engineers }: { account: Row; isSelf: boolean; engineers: { id: string; name: string }[] }) {
+  // One state for the row, so only the latest change's message shows.
+  const [state, run, busy] = useActionState((previous: InvitationFormState, form: FormData) => {
+    const change = { role: changeUserRole, deactivate, reactivate, move: moveJobCards }[String(form.get("change"))];
+    return change ? change(previous, form) : previous;
+  }, {});
+  const targets = engineers.filter((engineer) => engineer.id !== account.id);
+  return (
+    <div className="stack">
+      <div className="row">
+        <form action={run} className="row">
+          <input type="hidden" name="change" value="role" />
+          <input type="hidden" name="userId" value={account.id} />
+          <label className="inline">
+            Role
+            <select name="role" defaultValue={account.role} key={account.role} aria-label={`Role for ${account.name}`}>
+              <option value="engineer">Engineer</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <button type="submit" className="secondary" disabled={busy} aria-label={`Save Role for ${account.name}`}>
+            Save Role
+          </button>
+        </form>
+        {!isSelf && (
+          <form
+            action={run}
+            onSubmit={(event) => {
+              if (account.active && !confirm(`Deactivate ${account.name}? They are signed out at once and can't sign in.`)) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="change" value={account.active ? "deactivate" : "reactivate"} />
+            <input type="hidden" name="userId" value={account.id} />
+            <button type="submit" className="secondary" disabled={busy} aria-label={`${account.active ? "Deactivate" : "Reactivate"} ${account.name}`}>
+              {account.active ? "Deactivate" : "Reactivate"}
+            </button>
+          </form>
+        )}
+      </div>
+      {!account.active && account.jobCards > 0 && (
+        <form action={run} className="row" aria-label={`Move Job Cards from ${account.name}`}>
+          <input type="hidden" name="change" value="move" />
+          <input type="hidden" name="fromUserId" value={account.id} />
+          <label className="inline">
+            Move their Job Cards to
+            <select name="toUserId" required defaultValue="">
+              <option value="" disabled>
+                Choose an Engineer
+              </option>
+              {targets.map((engineer) => (
+                <option key={engineer.id} value={engineer.id}>
+                  {engineer.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className="secondary" disabled={busy || targets.length === 0}>
+            Move Job Cards
+          </button>
+        </form>
+      )}
+      <Messages state={state} />
+    </div>
   );
 }
 
