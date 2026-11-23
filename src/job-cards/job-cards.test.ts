@@ -185,10 +185,10 @@ describe("addVehicle", () => {
 describe("Customers", () => {
   it("adds a Customer with a name, phone and email, and finds it by part of its name", async () => {
     const { db } = await setUp();
-    const result = await addCustomer(db, { name: " Pretend Plumbing ", phone: "01000 000000", email: "Office@Pretend.test" });
+    const result = await addCustomer(db, { name: " Pretend Plumbing ", phone: "01632 960456", email: "Office@Pretend.test" });
     expect(result).toEqual({ customer: { id: expect.any(String), name: "Pretend Plumbing" } });
     const [stored] = await db.select().from(customers).where(eq(customers.name, "Pretend Plumbing"));
-    expect(stored).toMatchObject({ phone: "01000 000000", email: "office@pretend.test" });
+    expect(stored).toMatchObject({ phone: "01632 960456", email: "office@pretend.test" });
     expect((await findCustomers(db, "plumb")).map((c) => c.name)).toEqual(["Pretend Plumbing"]);
     expect((await findCustomers(db, "")).map((c) => c.name)).toEqual(["Pretend Plumbing", "Testfleet Haulage"]);
   });

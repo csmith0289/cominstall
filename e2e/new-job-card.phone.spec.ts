@@ -9,7 +9,7 @@ test("an Engineer fills in a new Job Card on a phone-sized screen", async ({ pag
   await expect(page.getByRole("main").getByRole("textbox", { name: /^Part, row/ })).toHaveCount(6);
 
   const reg = inventedReg();
-  await addNewVehicleAndCustomer(page, reg, { name: "Fictional Fleet Services", phone: "07000 000000", email: "" });
+  await addNewVehicleAndCustomer(page, reg, { name: "Fictional Fleet Services", phone: "07700 900123", email: "" });
   await page.getByLabel("Mileage").fill("88000");
   await page.getByRole("textbox", { name: "Work Carried Out" }).fill("Replaced the camera.");
   await page.getByLabel("Quantity, row 1").fill("1");

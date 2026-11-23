@@ -22,9 +22,10 @@ export async function signUpNewEngineer(page: Page, browser: Browser, project: s
 }
 
 // A made-up current-style Reg, different on every run (the e2e database is shared by every test in the run).
+// It starts with Z, which no real current-style Reg does, so it can never be someone's vehicle.
 export function inventedReg(): { stored: string; shown: string } {
   const letter = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
-  const stored = `${letter()}${letter()}${Math.floor(10 + Math.random() * 90)}${letter()}${letter()}${letter()}`;
+  const stored = `Z${letter()}${Math.floor(10 + Math.random() * 90)}${letter()}${letter()}${letter()}`;
   return { stored, shown: `${stored.slice(0, 4)} ${stored.slice(4)}` };
 }
 
@@ -48,16 +49,18 @@ export async function addNewVehicleAndCustomer(
   customer: { name: string; phone: string; email: string },
 ) {
   await page.getByLabel("Reg", { exact: true }).fill(reg.stored.toLowerCase());
-  await page.getByRole("button", { name: `Add new vehicle ${reg.shown}` }).click();
-  const panel = page.getByRole("region", { name: `New vehicle ${reg.shown}` });
-  await panel.getByRole("button", { name: "Add new customer" }).click();
-  const form = panel.getByRole("group", { name: "New customer" });
+  await page.getByRole("button", { name: `Add new Vehicle ${reg.shown}`, exact: true }).click();
+  const panel = page.getByRole("region", { name: `New Vehicle ${reg.shown}`, exact: true });
+  await expect(panel.getByRole("heading", { name: `New Vehicle ${reg.shown}`, exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Add new Customer", exact: true }).click();
+  const form = panel.getByRole("group", { name: "New Customer", exact: true });
+  await expect(form.getByRole("heading", { name: "New Customer", exact: true })).toBeVisible();
   await form.getByLabel("Name").fill(customer.name);
   await form.getByLabel("Phone").fill(customer.phone);
   await form.getByLabel("Email").fill(customer.email);
-  await form.getByRole("button", { name: "Save customer" }).click();
+  await form.getByRole("button", { name: "Save Customer", exact: true }).click();
   await expect(panel).toContainText(`Customer: ${customer.name}`);
-  await panel.getByRole("button", { name: "Add vehicle" }).click();
+  await panel.getByRole("button", { name: "Add Vehicle", exact: true }).click();
   await expect(panel).toHaveCount(0);
   await expect(page.getByLabel("Reg", { exact: true })).toHaveValue(reg.shown);
   await expect(page.getByLabel("Customer", { exact: true })).toHaveValue(customer.name);

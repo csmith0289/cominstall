@@ -15,7 +15,7 @@ test("an Engineer starts a Draft, adds a new Vehicle and Customer, fills it in, 
   await expect(saveState(page)).toHaveText("Saved");
 
   const reg = inventedReg();
-  await addNewVehicleAndCustomer(page, reg, { name: "Imaginary Couriers Ltd", phone: "01000 111222", email: "office@imaginary.test" });
+  await addNewVehicleAndCustomer(page, reg, { name: "Imaginary Couriers Ltd", phone: "01632 960123", email: "office@imaginary.test" });
 
   // Mileage is a whole number: anything else typed is dropped.
   await page.getByLabel("Mileage").fill("");
@@ -64,7 +64,7 @@ test("typing a Reg however it's written suggests the Vehicle, and choosing it fi
   const suggestions = second.getByRole("list", { name: "Matching Vehicles" });
   await expect(suggestions.getByRole("button")).toHaveText([`${reg.shown} · Pretend Plant Hire`]);
   // A known Reg isn't offered as a new Vehicle.
-  await expect(second.getByRole("button", { name: /^Add new vehicle/ })).toHaveCount(0);
+  await expect(second.getByRole("button", { name: /^Add new Vehicle/i })).toHaveCount(0);
   await suggestions.getByRole("button", { name: reg.shown }).click();
   await expect(second.getByLabel("Reg", { exact: true })).toHaveValue(reg.shown);
   await expect(second.getByLabel("Customer", { exact: true })).toHaveValue("Pretend Plant Hire");

@@ -316,7 +316,7 @@ function RegField({ vehicle, onChoose }: { vehicle: Card["vehicle"]; onChoose: (
       {lookupFailed && !chosen && <p className="error hint">Can&apos;t look up Regs – no signal.</p>}
       {canAdd && adding !== reg && (
         <button type="button" className="secondary add-vehicle" onClick={() => setAdding(reg)}>
-          Add new vehicle {displayReg(reg)}
+          Add new Vehicle {displayReg(reg)}
         </button>
       )}
       {canAdd && adding === reg && <NewVehicle reg={reg} onAdded={choose} onCancel={() => setAdding(null)} />}
@@ -364,8 +364,8 @@ function NewVehicle({ reg, onAdded, onCancel }: { reg: string; onAdded: (vehicle
   };
 
   return (
-    <section className="new-vehicle stack" aria-label={`New vehicle ${displayReg(reg)}`}>
-      <h2>New vehicle {displayReg(reg)}</h2>
+    <section className="new-vehicle stack" aria-label={`New Vehicle ${displayReg(reg)}`}>
+      <h2>New Vehicle {displayReg(reg)}</h2>
       {creating ? (
         <NewCustomer
           onAdded={(added) => {
@@ -402,7 +402,7 @@ function NewVehicle({ reg, onAdded, onCancel }: { reg: string; onAdded: (vehicle
                 </ul>
               )}
               <button type="button" className="secondary" onClick={() => setCreating(true)}>
-                Add new customer
+                Add new Customer
               </button>
             </>
           )}
@@ -413,7 +413,7 @@ function NewVehicle({ reg, onAdded, onCancel }: { reg: string; onAdded: (vehicle
           )}
           <div className="row">
             <button type="button" onClick={add} disabled={busy || !customer}>
-              Add vehicle
+              Add Vehicle
             </button>
             <button type="button" className="secondary" onClick={onCancel}>
               Cancel
@@ -445,8 +445,8 @@ function NewCustomer({ onAdded, onCancel }: { onAdded: (customer: CustomerChoice
   };
 
   return (
-    <div className="stack" role="group" aria-label="New customer">
-      <h3>New customer</h3>
+    <div className="stack" role="group" aria-label="New Customer">
+      <h3>New Customer</h3>
       <label>
         Name
         <input value={fields.name} maxLength={200} autoComplete="off" onChange={(event) => setFields({ ...fields, name: event.target.value })} />
@@ -478,7 +478,7 @@ function NewCustomer({ onAdded, onCancel }: { onAdded: (customer: CustomerChoice
       )}
       <div className="row">
         <button type="button" onClick={save} disabled={busy}>
-          Save customer
+          Save Customer
         </button>
         <button type="button" className="secondary" onClick={onCancel}>
           Cancel
