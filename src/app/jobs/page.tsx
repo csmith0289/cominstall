@@ -1,5 +1,5 @@
 import { requireUser } from "../session";
-import { newJobCard } from "./actions";
+import { NewJobCardButton } from "./new-job-card-button";
 
 // My Jobs. The list itself is ticket 04.
 export default async function MyJobsPage() {
@@ -8,9 +8,7 @@ export default async function MyJobsPage() {
     <main>
       <h1>My Jobs</h1>
       <p>Hello {user.name}. Your Job Cards will appear here.</p>
-      <form action={newJobCard}>
-        <button type="submit">New Job Card</button>
-      </form>
+      <NewJobCardButton />
     </main>
   );
 }

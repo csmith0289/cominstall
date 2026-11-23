@@ -93,6 +93,124 @@ test("with no signal the Job Card says it isn't saved, then saves when the signa
   await expect(work).toHaveValue("Typed in a dead spot.");
 });
 
+// #21
+test("going Back to a Job Card shows the latest copy, and the next edit doesn't wipe what was saved", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Back Button Engineer");
+  await startNewJobCard(page);
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await work.fill("Fitted new tail lift switch");
+  await page.getByLabel("Mileage").fill("88000");
+  await expect(saveState(page)).toHaveText("Saved");
+
+  await page.getByRole("link", { name: "← My Jobs" }).click();
+  await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
+  await page.goBack();
+  await expect(work).toHaveValue("Fitted new tail lift switch");
+  await expect(page.getByLabel("Mileage")).toHaveValue("88000");
+
+  await page.getByLabel("Part, row 1").fill("Switch");
+  await expect(saveState(page)).toHaveText("Saved");
+  await page.reload();
+  await expect(work).toHaveValue("Fitted new tail lift switch");
+  await expect(page.getByLabel("Mileage")).toHaveValue("88000");
+  await expect(page.getByLabel("Part, row 1")).toHaveValue("Switch");
+});
+
+// #23
+test("two tabs on the same Job Card don't undo each other's edits to different fields", async ({ page, browser, context }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Two Tab Engineer");
+  await startNewJobCard(page);
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await work.fill("from tab A");
+  await expect(saveState(page)).toHaveText("Saved");
+
+  const tabB = await context.newPage();
+  await tabB.goto(page.url());
+  await expect(tabB.getByRole("textbox", { name: "Work Carried Out" })).toHaveValue("from tab A");
+
+  await page.bringToFront();
+  await work.fill("from tab A, edited again");
+  await expect(saveState(page)).toHaveText("Saved");
+  await tabB.getByLabel("Mileage").fill("777");
+  await expect(saveState(tabB)).toHaveText("Saved");
+
+  await tabB.reload();
+  await expect(tabB.getByRole("textbox", { name: "Work Carried Out" })).toHaveValue("from tab A, edited again");
+  await expect(tabB.getByLabel("Mileage")).toHaveValue("777");
+  await tabB.close();
+});
+
+// #22
+test("a Reg typed in full is chosen without tapping it, and a Reg that isn't a Vehicle says it isn't saved", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Typing Engineer");
+  await startNewJobCard(page);
+  const known = inventedReg();
+  await addNewVehicleAndCustomer(page, known, { name: "Make Believe Removals", phone: "", email: "" });
+
+  await startNewJobCard(page);
+  const reg = page.getByLabel("Reg", { exact: true });
+  await reg.fill(known.stored.toLowerCase());
+  await expect(page.getByRole("list", { name: "Matching Vehicles" })).toBeVisible();
+  await page.getByLabel("Mileage").fill("1200");
+  await expect(page.getByLabel("Customer", { exact: true })).toHaveValue("Make Believe Removals");
+  await expect(saveState(page)).toHaveText("Saved");
+  await page.reload();
+  await expect(reg).toHaveValue(known.shown);
+  await expect(page.getByLabel("Customer", { exact: true })).toHaveValue("Make Believe Removals");
+
+  const unknown = inventedReg();
+  await reg.fill(unknown.stored);
+  await page.getByLabel("Mileage").fill("1300");
+  await expect(page.getByText("Reg not saved – choose a matching Vehicle or add a new one.")).toBeVisible();
+  await expect(page.getByLabel("Customer", { exact: true })).toHaveValue("");
+});
+
+// #24
+test("double-clicking New Job Card makes one Draft", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Double Click Engineer");
+  await page.goto("/jobs");
+  // The first action sent from My Jobs is "New Job Card". A second press is queued, and goes out from the new page.
+  let newJobCardAction: string | undefined;
+  let creates = 0;
+  page.on("request", (request) => {
+    const action = request.headers()["next-action"];
+    if (request.method() !== "POST" || !action) return;
+    newJobCardAction ??= new URL(request.url()).pathname === "/jobs" ? action : undefined;
+    if (action === newJobCardAction) creates += 1;
+  });
+  // Two presses before the page can react, as a quick double-tap gives.
+  await page.getByRole("button", { name: "New Job Card" }).evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+  });
+  await expect(page.getByRole("heading", { name: "Job Card", exact: true })).toBeVisible();
+  // A second press would be queued behind the first, so give it time to go out.
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(1_500);
+  expect(creates).toBe(1);
+
+  // Back on My Jobs, the button works again.
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "New Job Card" })).toBeEnabled();
+});
+
+// #25
+test("Parts Used stops at 100 rows, and the card still saves", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Many Parts Engineer");
+  await startNewJobCard(page);
+  const addRow = page.getByRole("button", { name: "+ Add another row" });
+  for (let rows = 6; rows < 100; rows += 1) await addRow.click();
+  await expect(page.getByRole("main").getByRole("textbox", { name: /^Part, row/ })).toHaveCount(100);
+  await expect(addRow).toBeDisabled();
+  await expect(page.getByText("A Job Card can have up to 100 Parts Used.")).toBeVisible();
+
+  await page.getByLabel("Part, row 100").fill("Last relay");
+  await page.getByRole("textbox", { name: "Work Carried Out" }).fill("Lots of rows");
+  await expect(saveState(page)).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByLabel("Part, row 1")).toHaveValue("Last relay");
+});
+
 test("a Job Card sends anyone signed out to the sign-in page", async ({ page }) => {
   await page.goto("/jobs/any-id");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

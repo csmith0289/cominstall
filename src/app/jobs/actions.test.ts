@@ -28,7 +28,7 @@ vi.mock("@/db", async (importOriginal) => ({
   getDatabase: async () => db,
 }));
 
-const { addNewCustomer, addNewVehicle, findVehicles, newJobCard, saveJobCardChanges, searchCustomers } = await import("./actions");
+const { addNewCustomer, addNewVehicle, findVehicles, latestJobCard, newJobCard, saveJobCardChanges, searchCustomers } = await import("./actions");
 
 beforeEach(async () => {
   db = await createTestDatabase();
@@ -91,6 +91,17 @@ describe("Job Card actions", () => {
     expect((await db.select().from(jobCards))[0]).toMatchObject({ engineerId: owner, workCarriedOut: "Mine" });
   });
 
+  it("load the latest copy of the signed-in Engineer's own Job Card, and nobody else's", async () => {
+    await signInAsEngineer("erin@example.test");
+    const id = await newDraftId();
+    await saveJobCardChanges(id, { workCarriedOut: "Newer work" });
+    expect(await latestJobCard(id)).toMatchObject({ id, workCarriedOut: "Newer work" });
+    expect(await latestJobCard(42)).toBeNull();
+
+    await signInAsEngineer("owen@example.test");
+    expect(await latestJobCard(id)).toBeNull();
+  });
+
   it("add a Customer and a Vehicle, then suggest the Vehicle by Reg", async () => {
     await signInAsEngineer("erin@example.test");
     const added = await addNewCustomer({ name: "Testfleet Haulage", phone: "", email: "" });
@@ -106,6 +117,7 @@ describe("Job Card actions", () => {
     const [fleet] = await db.insert(customers).values({ name: "Testfleet Haulage" }).returning();
     await expect(newJobCard()).rejects.toMatchObject(redirectedToSignIn);
     await expect(saveJobCardChanges("any-id", blank)).rejects.toMatchObject(redirectedToSignIn);
+    await expect(latestJobCard("any-id")).rejects.toMatchObject(redirectedToSignIn);
     await expect(findVehicles("AB")).rejects.toMatchObject(redirectedToSignIn);
     await expect(searchCustomers("")).rejects.toMatchObject(redirectedToSignIn);
     await expect(addNewCustomer({ name: "Sneaky Ltd" })).rejects.toMatchObject(redirectedToSignIn);

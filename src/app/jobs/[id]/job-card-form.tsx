@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CustomerChoice } from "@/customers";
-import { MAX_MILEAGE_DIGITS, STARTING_PART_ROWS, type JobCardChanges, type JobCardView, type PartRow } from "@/job-cards/rules";
+import { MAX_MILEAGE_DIGITS, MAX_PART_ROWS, STARTING_PART_ROWS, type JobCardChanges, type JobCardView, type PartRow } from "@/job-cards/rules";
 import type { VehicleChoice } from "@/vehicles";
 import { displayReg, normaliseReg } from "@/vehicles/reg";
-import { addNewCustomer, addNewVehicle, findVehicles, saveJobCardChanges, searchCustomers } from "../actions";
+import { addNewCustomer, addNewVehicle, findVehicles, latestJobCard, saveJobCardChanges, searchCustomers } from "../actions";
 
 // Saves this long after typing stops (the ticket allows 2 seconds).
 const SAVE_AFTER_MS = 800;
@@ -19,6 +19,7 @@ const emptyRow = (): PartRow => ({ quantity: "", part: "", partNumberOrNotes: ""
 const padRows = (rows: PartRow[]) => [...rows, ...Array.from({ length: Math.max(0, STARTING_PART_ROWS - rows.length) }, emptyRow)];
 
 type Card = {
+  status: JobCardView["status"];
   jobDate: string;
   vehicle: { id: string; reg: string } | null;
   customer: { id: string; name: string } | null;
@@ -27,47 +28,64 @@ type Card = {
   parts: PartRow[];
 };
 
-const changesFrom = (card: Card): JobCardChanges => ({
-  jobDate: card.jobDate,
-  vehicleId: card.vehicle?.id ?? null,
-  mileage: card.mileage === "" ? null : Number(card.mileage),
-  workCarriedOut: card.workCarriedOut,
-  parts: card.parts,
+const cardFrom = (view: JobCardView): Card => ({
+  status: view.status,
+  jobDate: view.jobDate,
+  vehicle: view.vehicle,
+  customer: view.customer,
+  mileage: view.mileage === null ? "" : String(view.mileage),
+  workCarriedOut: view.workCarriedOut,
+  parts: padRows(view.parts),
 });
 
-// Sends the whole card to the server shortly after each change, one save at a time, and keeps trying while there's
-// no signal.
+// Only the fields that were edited. The Customer isn't sent: the server takes it from the Vehicle.
+function changesFrom(patch: Partial<Card>): JobCardChanges {
+  const changes: JobCardChanges = {};
+  if (patch.jobDate !== undefined) changes.jobDate = patch.jobDate;
+  if (patch.vehicle !== undefined) changes.vehicleId = patch.vehicle?.id ?? null;
+  if (patch.mileage !== undefined) changes.mileage = patch.mileage === "" ? null : Number(patch.mileage);
+  if (patch.workCarriedOut !== undefined) changes.workCarriedOut = patch.workCarriedOut;
+  if (patch.parts !== undefined) changes.parts = patch.parts;
+  return changes;
+}
+
+// Sends the fields edited since the last save shortly after each change, one save at a time, and keeps trying while
+// there's no signal. Fields not edited here are never sent, so they can't overwrite newer work saved elsewhere.
 function useAutosave(id: string) {
   const [state, setState] = useState<SaveState>({ kind: "saved" });
-  const latest = useRef<JobCardChanges | null>(null);
-  const dirty = useRef(false);
+  const pending = useRef<JobCardChanges>({});
   const saving = useRef(false);
+  // Goes up with every edit, so a reload from the server can tell whether the Engineer typed while it was on its way.
+  const edits = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hasPending = () => Object.keys(pending.current).length > 0;
 
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
-    if (saving.current || !dirty.current || !latest.current) return;
+    if (saving.current || !hasPending()) return;
     saving.current = true;
-    dirty.current = false;
+    const sending = pending.current;
+    pending.current = {};
     let retryAfter = 0;
     try {
-      const result = await saveJobCardChanges(id, latest.current);
+      const result = await saveJobCardChanges(id, sending);
       if ("error" in result) setState({ kind: "error", message: result.error });
-      else if (!dirty.current) setState({ kind: "saved" });
+      else if (!hasPending()) setState({ kind: "saved" });
     } catch {
-      dirty.current = true;
+      // Anything edited since takes priority over what didn't go.
+      pending.current = { ...sending, ...pending.current };
       retryAfter = RETRY_AFTER_MS;
       setState({ kind: "offline" });
     } finally {
       saving.current = false;
     }
-    if (dirty.current) timer.current = setTimeout(() => void flush(), retryAfter || SAVE_AFTER_MS);
+    if (hasPending()) timer.current = setTimeout(() => void flush(), retryAfter || SAVE_AFTER_MS);
   }, [id]);
 
   const changed = useCallback(
     (changes: JobCardChanges) => {
-      latest.current = changes;
-      dirty.current = true;
+      pending.current = { ...pending.current, ...changes };
+      edits.current += 1;
       setState((current) => (current.kind === "offline" ? current : { kind: "saving" }));
       clearTimeout(timer.current);
       timer.current = setTimeout(() => void flush(), SAVE_AFTER_MS);
@@ -84,7 +102,9 @@ function useAutosave(id: string) {
     };
   }, [flush]);
 
-  return { state, changed };
+  const idle = useCallback(() => !saving.current && !hasPending(), []);
+  const editCount = useCallback(() => edits.current, []);
+  return { state, changed, idle, editCount };
 }
 
 function SaveStatus({ state }: { state: SaveState }) {
@@ -97,50 +117,82 @@ function SaveStatus({ state }: { state: SaveState }) {
 }
 
 export function JobCardForm({ card: initial }: { card: JobCardView }) {
-  const [card, setCard] = useState<Card>({
-    jobDate: initial.jobDate,
-    vehicle: initial.vehicle,
-    customer: initial.customer,
-    mileage: initial.mileage === null ? "" : String(initial.mileage),
-    workCarriedOut: initial.workCarriedOut,
-    parts: padRows(initial.parts),
-  });
-  const { state, changed } = useAutosave(initial.id);
-  const locked = initial.status === "complete";
+  const [card, setCardState] = useState<Card>(() => cardFrom(initial));
+  // The card as of the latest change, even before React has re-rendered: two changes in quick succession (choosing
+  // a Vehicle as the Engineer moves on to Mileage) must build on each other, not on the same older render.
+  const latest = useRef(card);
+  const setCard = (next: Card) => {
+    latest.current = next;
+    setCardState(next);
+  };
+  const { state, changed, idle, editCount } = useAutosave(initial.id);
+  const locked = card.status === "complete";
+  // Changes when the Vehicle is replaced by a newer copy from the server, so the Reg field starts again from it.
+  const [regRevision, setRegRevision] = useState(0);
 
   const update = (patch: Partial<Card>) => {
-    const next = { ...card, ...patch };
-    setCard(next);
-    changed(changesFrom(next));
+    setCard({ ...latest.current, ...patch });
+    changed(changesFrom(patch));
   };
 
+  // The page may have come from the browser's or the router's cache (Back, Forward), or sat in a tab while the card
+  // was changed in another one. Catch up with the latest saved copy, unless the Engineer has edits on the way.
+  useEffect(() => {
+    const catchUp = async () => {
+      if (!idle()) return;
+      const before = editCount();
+      let fresh: JobCardView | null;
+      try {
+        fresh = await latestJobCard(initial.id);
+      } catch {
+        return;
+      }
+      if (!fresh || !idle() || editCount() !== before) return;
+      const next = cardFrom(fresh);
+      if (next.vehicle?.id !== latest.current.vehicle?.id) setRegRevision((revision) => revision + 1);
+      setCard(next);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void catchUp();
+    };
+    void catchUp();
+    window.addEventListener("pageshow", catchUp);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("pageshow", catchUp);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [initial.id, idle, editCount]);
+
   const work = useRef<HTMLTextAreaElement>(null);
-  const grow = () => {
+  useEffect(() => {
     const box = work.current;
     if (!box) return;
     box.style.height = "auto";
     box.style.height = `${box.scrollHeight + 2}px`;
-  };
-  useEffect(grow, []);
+  }, [card.workCarriedOut]);
 
   const table = useRef<HTMLTableSectionElement>(null);
+  const atRowLimit = card.parts.length >= MAX_PART_ROWS;
   const addRow = () => {
-    update({ parts: [...card.parts, emptyRow()] });
+    if (latest.current.parts.length >= MAX_PART_ROWS) return;
+    update({ parts: [...latest.current.parts, emptyRow()] });
     requestAnimationFrame(() => table.current?.querySelector<HTMLInputElement>("tr:last-child input")?.focus());
   };
   const setPart = (index: number, patch: Partial<PartRow>) =>
-    update({ parts: card.parts.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
+    update({ parts: latest.current.parts.map((row, i) => (i === index ? { ...row, ...patch } : row)) });
 
   return (
     <form className="job-card" aria-label="Job Card" onSubmit={(event) => event.preventDefault()}>
       <div className="job-card-head">
         <h1>Job Card</h1>
-        <span className="muted">{{ draft: "Draft", outstanding: "Outstanding", complete: "Complete" }[initial.status]}</span>
+        <span className="muted">{{ draft: "Draft", outstanding: "Outstanding", complete: "Complete" }[card.status]}</span>
       </div>
       <SaveStatus state={state} />
       <fieldset disabled={locked} className="job-card-fields">
         <div className="grid">
           <RegField
+            key={regRevision}
             vehicle={card.vehicle}
             onChoose={(vehicle) => update({ vehicle: vehicle && { id: vehicle.id, reg: vehicle.reg }, customer: vehicle?.customer ?? null })}
           />
@@ -175,10 +227,7 @@ export function JobCardForm({ card: initial }: { card: JobCardView }) {
             aria-labelledby="work-label"
             rows={9}
             value={card.workCarriedOut}
-            onChange={(event) => {
-              update({ workCarriedOut: event.target.value });
-              grow();
-            }}
+            onChange={(event) => update({ workCarriedOut: event.target.value })}
           />
         </div>
 
@@ -233,9 +282,10 @@ export function JobCardForm({ card: initial }: { card: JobCardView }) {
             ))}
           </tbody>
         </table>
-        <button type="button" className="add-row" onClick={addRow}>
+        <button type="button" className="add-row" onClick={addRow} disabled={atRowLimit}>
           + Add another row
         </button>
+        {atRowLimit && <p className="muted hint">A Job Card can have up to {MAX_PART_ROWS} Parts Used.</p>}
       </fieldset>
     </form>
   );
@@ -275,7 +325,7 @@ function RegField({ vehicle, onChoose }: { vehicle: Card["vehicle"]; onChoose: (
     return () => clearTimeout(timer);
   }, [reg, chosen]);
 
-  const exact = suggestions.some((suggestion) => normaliseReg(suggestion.reg) === reg);
+  const exact = lookedUp === reg ? suggestions.find((suggestion) => normaliseReg(suggestion.reg) === reg) : undefined;
   const canAdd = !chosen && lookedUp === reg && !exact && reg.length >= 2 && reg.length <= 10;
 
   const choose = (choice: VehicleChoice) => {
@@ -283,6 +333,14 @@ function RegField({ vehicle, onChoose }: { vehicle: Card["vehicle"]; onChoose: (
     setAdding(null);
     onChoose(choice);
   };
+
+  // A Reg typed in full that matches a Vehicle is chosen once the Engineer moves on, without tapping the suggestion.
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    // choose is remade every render; this runs only when focus or the match changes.
+    if (!focused && !chosen && exact) choose(exact);
+  }, [focused, chosen, exact]);
+  const notSaved = !chosen && reg !== "" && !focused && !exact && adding !== reg;
 
   return (
     <div className="cell reg-cell">
@@ -295,6 +353,9 @@ function RegField({ vehicle, onChoose }: { vehicle: Card["vehicle"]; onChoose: (
         spellCheck={false}
         maxLength={14}
         value={typed}
+        aria-describedby={notSaved ? "reg-not-saved" : undefined}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         onChange={(event) => {
           setTyped(event.target.value);
           setAdding(null);
@@ -320,6 +381,12 @@ function RegField({ vehicle, onChoose }: { vehicle: Card["vehicle"]; onChoose: (
         </button>
       )}
       {canAdd && adding === reg && <NewVehicle reg={reg} onAdded={choose} onCancel={() => setAdding(null)} />}
+      {/* Last, so it never moves a button the Engineer is tapping. */}
+      {notSaved && (
+        <p id="reg-not-saved" className="error hint">
+          Reg not saved – choose a matching Vehicle or add a new one.
+        </p>
+      )}
     </div>
   );
 }

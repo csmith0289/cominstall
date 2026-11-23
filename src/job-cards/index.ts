@@ -6,10 +6,12 @@ import type { Database } from "@/db";
 import { customers, jobCardParts, jobCards, vehicles } from "@/db/schema";
 import { displayReg } from "@/vehicles/reg";
 import {
-  MAX_MILEAGE_DIGITS,
+  isEmptyPartRow,
+  MAX_MILEAGE,
   MAX_PART,
   MAX_PART_NUMBER_OR_NOTES,
   MAX_PART_ROWS,
+  MAX_SENT_PART_ROWS,
   MAX_QUANTITY,
   MAX_WORK_CARRIED_OUT,
   type JobCardChanges,
@@ -75,35 +77,57 @@ function isIsoDate(text: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
 }
 
-// Checks what the browser sent. Anything not listed here (an engineer id, a Status) is ignored.
+// Checks what the browser sent. Each field is optional: one left out isn't changed. Anything not listed here (an
+// engineer id, a Status) is ignored. Empty Parts Used rows are dropped, so they never count towards the limit.
 export function parseChanges(input: unknown): JobCardChanges | { error: string } {
   if (!isRecord(input)) return { error: "Nothing to save." };
   const { jobDate, vehicleId, mileage, workCarriedOut, parts } = input;
-  if (typeof jobDate !== "string" || !isIsoDate(jobDate)) return { error: "Enter the Date." };
-  if (vehicleId !== null && (typeof vehicleId !== "string" || !vehicleId)) return { error: "Choose the Reg again." };
-  if (mileage !== null && (typeof mileage !== "number" || !Number.isInteger(mileage) || mileage < 0 || String(mileage).length > MAX_MILEAGE_DIGITS)) {
-    return { error: "Mileage must be a whole number." };
+  const changes: JobCardChanges = {};
+  if (jobDate !== undefined) {
+    if (typeof jobDate !== "string" || !isIsoDate(jobDate)) return { error: "Enter the Date." };
+    changes.jobDate = jobDate;
   }
-  if (typeof workCarriedOut !== "string") return { error: "Nothing to save." };
-  if (workCarriedOut.length > MAX_WORK_CARRIED_OUT) return { error: `Keep Work Carried Out under ${MAX_WORK_CARRIED_OUT} characters.` };
-  if (!Array.isArray(parts) || parts.length > MAX_PART_ROWS) return { error: `A Job Card can have up to ${MAX_PART_ROWS} Parts Used.` };
-  const rows: PartRow[] = [];
-  for (const row of parts) {
-    if (!isRecord(row)) return { error: "Nothing to save." };
-    const { quantity, part, partNumberOrNotes } = row;
-    if (typeof quantity !== "string" || typeof part !== "string" || typeof partNumberOrNotes !== "string") return { error: "Nothing to save." };
-    if (quantity.length > MAX_QUANTITY) return { error: `Keep each quantity under ${MAX_QUANTITY} characters.` };
-    if (part.length > MAX_PART) return { error: `Keep each part under ${MAX_PART} characters.` };
-    if (partNumberOrNotes.length > MAX_PART_NUMBER_OR_NOTES) return { error: `Keep each part number or note under ${MAX_PART_NUMBER_OR_NOTES} characters.` };
-    rows.push({ quantity, part, partNumberOrNotes });
+  if (vehicleId !== undefined) {
+    if (vehicleId !== null && (typeof vehicleId !== "string" || !vehicleId)) return { error: "Choose the Reg again." };
+    changes.vehicleId = vehicleId;
   }
-  return { jobDate, vehicleId, mileage, workCarriedOut, parts: rows };
+  if (mileage !== undefined) {
+    if (mileage !== null && (typeof mileage !== "number" || !Number.isSafeInteger(mileage) || mileage < 0 || mileage > MAX_MILEAGE)) {
+      return { error: "Mileage must be a whole number." };
+    }
+    changes.mileage = mileage;
+  }
+  if (workCarriedOut !== undefined) {
+    if (typeof workCarriedOut !== "string") return { error: "Nothing to save." };
+    if (workCarriedOut.length > MAX_WORK_CARRIED_OUT) return { error: `Keep Work Carried Out under ${MAX_WORK_CARRIED_OUT} characters.` };
+    changes.workCarriedOut = workCarriedOut;
+  }
+  if (parts !== undefined) {
+    const tooMany = { error: `A Job Card can have up to ${MAX_PART_ROWS} Parts Used.` };
+    if (!Array.isArray(parts)) return { error: "Nothing to save." };
+    if (parts.length > MAX_SENT_PART_ROWS) return tooMany;
+    const rows: PartRow[] = [];
+    for (const row of parts) {
+      if (!isRecord(row)) return { error: "Nothing to save." };
+      const { quantity, part, partNumberOrNotes } = row;
+      if (typeof quantity !== "string" || typeof part !== "string" || typeof partNumberOrNotes !== "string") return { error: "Nothing to save." };
+      if (quantity.length > MAX_QUANTITY) return { error: `Keep each quantity under ${MAX_QUANTITY} characters.` };
+      if (part.length > MAX_PART) return { error: `Keep each part under ${MAX_PART} characters.` };
+      if (partNumberOrNotes.length > MAX_PART_NUMBER_OR_NOTES) return { error: `Keep each part number or note under ${MAX_PART_NUMBER_OR_NOTES} characters.` };
+      const kept = { quantity, part, partNumberOrNotes };
+      if (!isEmptyPartRow(kept)) rows.push(kept);
+    }
+    if (rows.length > MAX_PART_ROWS) return tooMany;
+    changes.parts = rows;
+  }
+  return changes;
 }
 
 const NOT_FOUND = "This Job Card can't be found. Go back to My Jobs.";
 
-// Saves the whole card. Only the owning Engineer can, and only while it isn't Complete. Choosing a Vehicle also
-// stores its Customer at the time, so a Vehicle changing hands later doesn't rewrite this Job Card.
+// Saves the fields sent, and leaves the rest as they are. Only the owning Engineer can, and only while it isn't
+// Complete. Choosing a Vehicle also stores its Customer at the time, so a Vehicle changing hands later doesn't rewrite
+// this Job Card.
 export async function saveJobCard(db: Database, { id, engineerId, changes: input }: { id: string; engineerId: string; changes: unknown }): Promise<Result> {
   const changes = parseChanges(input);
   if ("error" in changes) return changes;
@@ -116,25 +140,26 @@ export async function saveJobCard(db: Database, { id, engineerId, changes: input
     if (!card) return { error: NOT_FOUND };
     if (card.status === "complete") return { error: "This Job Card is Complete, so it can't be changed." };
 
-    let vehicleChange = {};
-    if (changes.vehicleId !== card.vehicleId) {
-      if (changes.vehicleId === null) {
-        vehicleChange = { vehicleId: null, customerId: null };
+    const { jobDate, mileage, workCarriedOut, vehicleId, parts } = changes;
+    const set: Partial<typeof jobCards.$inferInsert> = {};
+    if (jobDate !== undefined) set.jobDate = jobDate;
+    if (mileage !== undefined) set.mileage = mileage;
+    if (workCarriedOut !== undefined) set.workCarriedOut = workCarriedOut;
+    if (vehicleId !== undefined && vehicleId !== card.vehicleId) {
+      if (vehicleId === null) {
+        Object.assign(set, { vehicleId: null, customerId: null });
       } else {
-        const [vehicle] = await tx.select({ id: vehicles.id, customerId: vehicles.customerId }).from(vehicles).where(eq(vehicles.id, changes.vehicleId));
+        const [vehicle] = await tx.select({ id: vehicles.id, customerId: vehicles.customerId }).from(vehicles).where(eq(vehicles.id, vehicleId));
         if (!vehicle) return { error: "That Vehicle no longer exists. Type the Reg again." };
-        vehicleChange = { vehicleId: vehicle.id, customerId: vehicle.customerId };
+        Object.assign(set, { vehicleId: vehicle.id, customerId: vehicle.customerId });
       }
     }
 
-    await tx
-      .update(jobCards)
-      .set({ jobDate: changes.jobDate, mileage: changes.mileage, workCarriedOut: changes.workCarriedOut, ...vehicleChange })
-      .where(eq(jobCards.id, id));
-    // Rows left empty aren't kept.
-    const filled = changes.parts.filter((row) => row.quantity.trim() || row.part.trim() || row.partNumberOrNotes.trim());
-    await tx.delete(jobCardParts).where(eq(jobCardParts.jobCardId, id));
-    if (filled.length) await tx.insert(jobCardParts).values(filled.map((row, position) => ({ jobCardId: id, position, ...row })));
+    if (Object.keys(set).length) await tx.update(jobCards).set(set).where(eq(jobCards.id, id));
+    if (parts !== undefined) {
+      await tx.delete(jobCardParts).where(eq(jobCardParts.jobCardId, id));
+      if (parts.length) await tx.insert(jobCardParts).values(parts.map((row, position) => ({ jobCardId: id, position, ...row })));
+    }
     return { ok: true } as const;
   });
 }

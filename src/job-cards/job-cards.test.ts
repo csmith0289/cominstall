@@ -122,6 +122,44 @@ describe("saveJobCard", () => {
     const id = await createDraft(db, { engineerId: "eng-1" });
     expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: { ...blank, vehicleId: "no-such-vehicle" } })).toHaveProperty("error");
   });
+
+  // An old copy of the card (Back, or a second tab) only sends what was edited in it, so it can't wipe the rest.
+  it("changes only the fields that are sent", async () => {
+    const { db, van, fleet } = await setUp();
+    const id = await createDraft(db, { engineerId: "eng-1" });
+    const full: JobCardChanges = {
+      jobDate: "2026-11-20",
+      vehicleId: van.id,
+      mileage: 88000,
+      workCarriedOut: "Fitted new tail lift switch",
+      parts: [{ quantity: "1", part: "Switch", partNumberOrNotes: "" }],
+    };
+    await saveJobCard(db, { id, engineerId: "eng-1", changes: full });
+
+    expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: { mileage: 88001 } })).toEqual({ ok: true });
+    expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: { parts: [{ quantity: "2", part: "Fuse", partNumberOrNotes: "" }] } })).toEqual({
+      ok: true,
+    });
+    expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: {} })).toEqual({ ok: true });
+
+    expect(await jobCardForEngineer(db, { id, engineerId: "eng-1" })).toMatchObject({
+      jobDate: "2026-11-20",
+      mileage: 88001,
+      workCarriedOut: "Fitted new tail lift switch",
+      vehicle: { id: van.id },
+      customer: { id: fleet.id },
+      parts: [{ quantity: "2", part: "Fuse", partNumberOrNotes: "" }],
+    });
+  });
+
+  it("doesn't count empty Parts Used rows towards the limit", async () => {
+    const { db } = await setUp();
+    const id = await createDraft(db, { engineerId: "eng-1" });
+    const empty = { quantity: "", part: "", partNumberOrNotes: "" };
+    const parts = [{ quantity: "1", part: "Relay", partNumberOrNotes: "" }, ...Array.from({ length: 104 }, () => empty)];
+    expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: { parts, workCarriedOut: "Still saves" } })).toEqual({ ok: true });
+    expect(await jobCardForEngineer(db, { id, engineerId: "eng-1" })).toMatchObject({ workCarriedOut: "Still saves", parts: [parts[0]] });
+  });
 });
 
 describe("parseChanges", () => {
@@ -130,9 +168,13 @@ describe("parseChanges", () => {
     ["a negative mileage", { ...blank, mileage: -1 }],
     ["a mileage as text", { ...blank, mileage: "12" }],
     ["an eight-digit mileage", { ...blank, mileage: 12_345_678 }],
+    ["a mileage too big to store", { ...blank, mileage: 1e21 }],
+    ["an infinite mileage", { ...blank, mileage: Infinity }],
     ["no date", { ...blank, jobDate: "" }],
     ["an impossible date", { ...blank, jobDate: "2026-02-30" }],
-    ["too many Parts Used", { ...blank, parts: Array.from({ length: 101 }, () => ({ quantity: "", part: "", partNumberOrNotes: "" })) }],
+    ["too many Parts Used", { ...blank, parts: Array.from({ length: 101 }, () => ({ quantity: "1", part: "Fuse", partNumberOrNotes: "" })) }],
+    ["an absurd number of rows", { ...blank, parts: Array.from({ length: 1001 }, () => ({ quantity: "", part: "", partNumberOrNotes: "" })) }],
+    ["a vehicle id that isn't text", { vehicleId: 7 }],
     ["a Part Used that isn't text", { ...blank, parts: [{ quantity: 1, part: "", partNumberOrNotes: "" }] }],
     ["something that isn't a card", "hello"],
   ])("refuses %s", (_name, input) => {
@@ -142,6 +184,19 @@ describe("parseChanges", () => {
   it("accepts an empty card and a mileage of 0", () => {
     expect(parseChanges(blank)).toEqual(blank);
     expect(parseChanges({ ...blank, mileage: 0 })).toEqual({ ...blank, mileage: 0 });
+  });
+
+  it("keeps only the fields that were sent, and drops empty Parts Used rows", () => {
+    expect(parseChanges({ mileage: 9_999_999 })).toEqual({ mileage: 9_999_999 });
+    expect(parseChanges({})).toEqual({});
+    expect(
+      parseChanges({
+        parts: [
+          { quantity: " ", part: "", partNumberOrNotes: "" },
+          { quantity: "1", part: "Fuse", partNumberOrNotes: "" },
+        ],
+      }),
+    ).toEqual({ parts: [{ quantity: "1", part: "Fuse", partNumberOrNotes: "" }] });
   });
 });
 
