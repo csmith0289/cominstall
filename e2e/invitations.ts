@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { E2E_PASSWORD, invitingAdminEmail } from "./accounts";
 import { confirmEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 // Each run of the suite shares one outbox folder, so every invitee gets an address of its own.
 export const uniqueEmail = (label: string) => `${label}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@e2e.cominstall.test`;
@@ -15,8 +16,9 @@ export async function openUsersAsAdmin(page: Page, project: string) {
   await page.getByLabel("Password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
   const myJobs = page.getByRole("heading", { name: "My Jobs" });
+  const acceptHeading = page.getByRole("heading", { name: "Accept the terms of use" });
   const alreadyExists = page.getByRole("main").getByRole("alert").filter({ hasText: "already exists" });
-  await expect(myJobs.or(alreadyExists)).toBeVisible();
+  await expect(acceptHeading.or(alreadyExists)).toBeVisible();
   if (await alreadyExists.isVisible()) {
     await page.goto("/sign-in");
     await page.getByLabel("Email").fill(email);
@@ -24,6 +26,8 @@ export async function openUsersAsAdmin(page: Page, project: string) {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(myJobs).toBeVisible();
   } else {
+    await acceptTerms(page);
+    await expect(myJobs).toBeVisible();
     await confirmEmail(page, email);
   }
   await page.goto("/admin");

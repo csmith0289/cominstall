@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { needsTermsAcceptance, PRIVACY_PATH, TERMS_PATH } from "@/legal";
 import { signOut } from "./(auth)/actions";
 import { getSignedInUser } from "./session";
 import "./globals.css";
@@ -14,6 +15,7 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const user = await getSignedInUser();
+  const needsTerms = !!user && needsTermsAcceptance(user);
   return (
     <html lang="en-GB">
       <body>
@@ -25,8 +27,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           </Link>
           {user && (
             <nav>
-              <Link href="/jobs">My Jobs</Link>
-              {user.role === "admin" && <Link href="/admin">Admin</Link>}
+              {/* Until the current terms are accepted, the only way on is to accept them (or sign out). */}
+              {!needsTerms && <Link href="/jobs">My Jobs</Link>}
+              {!needsTerms && user.role === "admin" && <Link href="/admin">Admin</Link>}
               <form action={signOut}>
                 <button type="submit" className="link">
                   Sign out
@@ -36,6 +39,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           )}
         </header>
         {children}
+        <footer className="site-footer">
+          <Link href={TERMS_PATH}>Terms of use</Link>
+          <Link href={PRIVACY_PATH}>Privacy notice</Link>
+        </footer>
       </body>
     </html>
   );

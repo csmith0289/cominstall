@@ -9,6 +9,7 @@ import type { Database } from "@/db";
 import { invitations, user } from "@/db/schema";
 import { createMailer } from "@/email";
 import { createTestDatabase } from "@/db/test-database";
+import { TERMS_VERSION } from "@/legal";
 
 const APP_URL = "http://localhost:3000";
 const ADMIN = "admin@example.test";
@@ -60,16 +61,33 @@ async function signUpAndUseSession(email: string) {
     .map((setCookie) => setCookie.split(";")[0])
     .join("; ");
   requestHeaders = new Headers({ cookie });
+  // Most tests are about a User who has already accepted the terms of use.
+  await db.update(user).set({ termsVersion: TERMS_VERSION, termsAcceptedAt: new Date() }).where(eq(user.email, email));
 }
 
 // What next/navigation's notFound() and redirect() throw.
 const notFound = { digest: expect.stringContaining("404") };
 const redirectedToSignIn = { digest: expect.stringContaining("/sign-in") };
+const redirectedToAcceptTerms = { digest: expect.stringContaining("/accept-terms") };
 
 describe("requireUser()", () => {
   it("returns the signed-in User", async () => {
     await signUpAndUseSession(ENGINEER);
     expect(await requireUser()).toMatchObject({ email: ENGINEER, role: "engineer" });
+  });
+
+  it("sends a User who hasn't accepted the terms of use to accept them first", async () => {
+    await signUpAndUseSession(ENGINEER);
+    await db.update(user).set({ termsVersion: null, termsAcceptedAt: null }).where(eq(user.email, ENGINEER));
+    expect(await getSignedInUser()).toMatchObject({ email: ENGINEER, termsVersion: null });
+    await expect(requireUser()).rejects.toMatchObject(redirectedToAcceptTerms);
+  });
+
+  it("asks again when the User accepted an older version", async () => {
+    await signUpAndUseSession(ADMIN);
+    await db.update(user).set({ termsVersion: "an-older-version" }).where(eq(user.email, ADMIN));
+    await expect(requireUser()).rejects.toMatchObject(redirectedToAcceptTerms);
+    await expect(requireAdmin()).rejects.toMatchObject(redirectedToAcceptTerms);
   });
 
   it("sends anyone signed out to the sign-in page", async () => {
