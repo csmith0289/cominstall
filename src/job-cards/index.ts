@@ -3,6 +3,7 @@
 
 import { and, asc, eq } from "drizzle-orm";
 import type { Database } from "@/db";
+import { storableText } from "@/db/storable-text";
 import { customers, jobCardParts, jobCards, vehicles } from "@/db/schema";
 import { displayReg } from "@/vehicles/reg";
 import {
@@ -99,8 +100,9 @@ export function parseChanges(input: unknown): JobCardChanges | { error: string }
   }
   if (workCarriedOut !== undefined) {
     if (typeof workCarriedOut !== "string") return { error: "Nothing to save." };
-    if (workCarriedOut.length > MAX_WORK_CARRIED_OUT) return { error: `Keep Work Carried Out under ${MAX_WORK_CARRIED_OUT} characters.` };
-    changes.workCarriedOut = workCarriedOut;
+    const text = storableText(workCarriedOut);
+    if (text.length > MAX_WORK_CARRIED_OUT) return { error: `Keep Work Carried Out under ${MAX_WORK_CARRIED_OUT} characters.` };
+    changes.workCarriedOut = text;
   }
   if (parts !== undefined) {
     const tooMany = { error: `A Job Card can have up to ${MAX_PART_ROWS} Parts Used.` };
@@ -109,8 +111,8 @@ export function parseChanges(input: unknown): JobCardChanges | { error: string }
     const rows: PartRow[] = [];
     for (const row of parts) {
       if (!isRecord(row)) return { error: "Nothing to save." };
-      const { quantity, part, partNumberOrNotes } = row;
-      if (typeof quantity !== "string" || typeof part !== "string" || typeof partNumberOrNotes !== "string") return { error: "Nothing to save." };
+      if (typeof row.quantity !== "string" || typeof row.part !== "string" || typeof row.partNumberOrNotes !== "string") return { error: "Nothing to save." };
+      const [quantity, part, partNumberOrNotes] = [row.quantity, row.part, row.partNumberOrNotes].map(storableText) as [string, string, string];
       if (quantity.length > MAX_QUANTITY) return { error: `Keep each quantity under ${MAX_QUANTITY} characters.` };
       if (part.length > MAX_PART) return { error: `Keep each part under ${MAX_PART} characters.` };
       if (partNumberOrNotes.length > MAX_PART_NUMBER_OR_NOTES) return { error: `Keep each part number or note under ${MAX_PART_NUMBER_OR_NOTES} characters.` };

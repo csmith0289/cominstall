@@ -160,6 +160,35 @@ describe("saveJobCard", () => {
     expect(await saveJobCard(db, { id, engineerId: "eng-1", changes: { parts, workCarriedOut: "Still saves" } })).toEqual({ ok: true });
     expect(await jobCardForEngineer(db, { id, engineerId: "eng-1" })).toMatchObject({ workCarriedOut: "Still saves", parts: [parts[0]] });
   });
+
+  // #32: text pasted from some apps or PDFs can hold a NUL character, which the database can't store.
+  it("saves pasted text with a NUL character in it, leaving the character out", async () => {
+    const { db } = await setUp();
+    const id = await createDraft(db, { engineerId: "eng-1" });
+    const changes = {
+      mileage: 4600,
+      workCarriedOut: "Replaced fuse\u0000 F12",
+      parts: [{ quantity: "1\u0000", part: "Fuse\u0000", partNumberOrNotes: "F12\u0000" }],
+    };
+    expect(await saveJobCard(db, { id, engineerId: "eng-1", changes })).toEqual({ ok: true });
+    expect(await jobCardForEngineer(db, { id, engineerId: "eng-1" })).toMatchObject({
+      mileage: 4600,
+      workCarriedOut: "Replaced fuse F12",
+      parts: [{ quantity: "1", part: "Fuse", partNumberOrNotes: "F12" }],
+    });
+  });
+});
+
+describe("Customers with a NUL character", () => {
+  it("adds and finds a Customer whose pasted details hold a NUL character", async () => {
+    const { db } = await setUp();
+    const added = await addCustomer(db, { name: "Nulltest\u0000 Couriers", phone: "07700 900\u0000123", email: "desk\u0000@example.test" });
+    expect(added).toEqual({ customer: { id: expect.any(String), name: "Nulltest Couriers" } });
+    const [stored] = await db.select().from(customers).where(eq(customers.name, "Nulltest Couriers"));
+    expect(stored).toMatchObject({ phone: "07700 900123", email: "desk@example.test" });
+    expect(await findCustomers(db, "Nulltest\u0000")).toEqual([{ id: expect.any(String), name: "Nulltest Couriers" }]);
+    expect(await suggestVehicles(db, "ab12\u0000")).toHaveLength(1);
+  });
 });
 
 describe("parseChanges", () => {
