@@ -5,14 +5,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuth, type Auth } from "@/auth";
 import { hashInvitationToken } from "@/auth/sign-up-rules";
 import type { Database } from "@/db";
-import { auditLog, invitations } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { auditLog, invitations, jobCards, session, user } from "@/db/schema";
 import type { Email } from "@/email";
 import { createTestDatabase } from "@/db/test-database";
+import { TERMS_VERSION } from "@/legal";
 
 // Invented test accounts, never real people.
 const APP_URL = "http://localhost:3000";
 const ADMIN = "admin@example.test";
 const ENGINEER = "engineer@example.test";
+const SECOND_ENGINEER = "second.engineer@example.test";
 const PASSWORD = "a long password 1";
 
 // The request the action is handling, the auth and database it uses, and the emails it sends: set by each test.
@@ -39,7 +42,8 @@ vi.mock("@/email", async (importOriginal) => ({
   },
 }));
 
-const { cancel, invite, resend } = await import("./actions");
+const { cancel, changeUserRole, deactivate, invite, moveJobCards, reactivate, resend } = await import("./actions");
+const { getSignedInUser } = await import("../../session");
 
 beforeEach(async () => {
   db = await createTestDatabase();
@@ -56,7 +60,7 @@ beforeEach(async () => {
 });
 
 // Signs up (the Engineer from an Invitation) and makes the next request carry that account's session cookie.
-async function signUpAndUseSession(email: string) {
+async function signUpAndUseSession(email: string, name = "Sam Test") {
   const invitationToken = crypto.randomUUID();
   if (email !== ADMIN) {
     await db.insert(invitations).values({
@@ -67,7 +71,7 @@ async function signUpAndUseSession(email: string) {
     });
   }
   const { headers } = await currentAuth.api.signUpEmail({
-    body: { name: "Sam Test", email, password: PASSWORD, ...(email !== ADMIN && { invitationToken }) },
+    body: { name, email, password: PASSWORD, ...(email !== ADMIN && { invitationToken }) },
     returnHeaders: true,
   });
   requestHeaders = new Headers({
@@ -76,6 +80,8 @@ async function signUpAndUseSession(email: string) {
       .map((setCookie) => setCookie.split(";")[0])
       .join("; "),
   });
+  // These tests are about Users who have already accepted the terms of use.
+  await db.update(user).set({ termsVersion: TERMS_VERSION, termsAcceptedAt: new Date() }).where(eq(user.email, email));
 }
 
 const form = (fields: Record<string, string>) => {
@@ -151,5 +157,82 @@ describe("Admin → Users actions", () => {
     expect(await db.select().from(invitations)).toHaveLength(1);
     expect(await db.select().from(auditLog)).toEqual([]);
     expect(sent).toEqual([]);
+  });
+});
+
+// The id of the account a sign-up made.
+const idOf = async (email: string) => (await db.select({ id: user.id }).from(user).where(eq(user.email, email)))[0]!.id;
+
+describe("Admin → Users: managing Users", () => {
+  it("let an Admin change a Role, deactivate, move Job Cards and reactivate, each audited", async () => {
+    await signUpAndUseSession(ENGINEER, "Eli Engineer");
+    const engineerCookie = requestHeaders;
+    await signUpAndUseSession(SECOND_ENGINEER, "Fay Engineer");
+    await signUpAndUseSession(ADMIN);
+    const adminCookie = requestHeaders;
+    const engineer = await idOf(ENGINEER);
+    const second = await idOf(SECOND_ENGINEER);
+    await db.insert(jobCards).values({ engineerId: engineer, jobDate: "2026-11-20" });
+
+    expect(await changeUserRole({}, form({ userId: second, role: "admin" }))).toEqual({ notice: "Fay Engineer is now an Admin." });
+    expect(await changeUserRole({}, form({ userId: second, role: "engineer" }))).toEqual({ notice: "Fay Engineer is now an Engineer." });
+    expect(await deactivate({}, form({ userId: engineer }))).toEqual({ notice: "Eli Engineer is deactivated and signed out everywhere." });
+
+    // Their session ended at once.
+    requestHeaders = engineerCookie;
+    expect(await getSignedInUser()).toBeUndefined();
+    expect(await db.select().from(session).where(eq(session.userId, engineer))).toEqual([]);
+    requestHeaders = adminCookie;
+
+    expect(await moveJobCards({}, form({ fromUserId: engineer, toUserId: second }))).toEqual({ notice: "Moved 1 Job Card to Fay Engineer." });
+    expect((await db.select().from(jobCards))[0]!.engineerId).toBe(second);
+    expect(await reactivate({}, form({ userId: engineer }))).toEqual({ notice: "Eli Engineer can sign in again." });
+    const kinds = (await db.select().from(auditLog)).map((entry) => entry.kind).filter((kind) => !kind.startsWith("invitation"));
+    expect(kinds).toEqual(["user_role_changed", "user_role_changed", "user_deactivated", "job_card_reassigned", "user_reactivated"]);
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/users");
+  });
+
+  it("show the refusal, and don't refresh, when an Admin tries to deactivate or demote themselves as the last Admin", async () => {
+    await signUpAndUseSession(ADMIN);
+    revalidatePath.mockClear();
+    const self = await idOf(ADMIN);
+    expect(await deactivate({}, form({ userId: self }))).toEqual({ error: "You can't deactivate yourself. Ask another Admin." });
+    expect(await changeUserRole({}, form({ userId: self, role: "engineer" }))).toEqual({
+      error: "Sam Test is the last active Admin. Make someone else an Admin first.",
+    });
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("send an Admin who makes themselves an Engineer to My Jobs", async () => {
+    await signUpAndUseSession(SECOND_ENGINEER);
+    await signUpAndUseSession(ADMIN);
+    await changeUserRole({}, form({ userId: await idOf(SECOND_ENGINEER), role: "admin" }));
+    await expect(changeUserRole({}, form({ userId: await idOf(ADMIN), role: "engineer" }))).rejects.toMatchObject({
+      digest: expect.stringContaining("/jobs"),
+    });
+    expect((await db.select().from(user).where(eq(user.email, ADMIN)))[0]!.role).toBe("engineer");
+  });
+
+  it("give an Engineer a 404 and change nothing", async () => {
+    await signUpAndUseSession(SECOND_ENGINEER);
+    await signUpAndUseSession(ENGINEER);
+    const second = await idOf(SECOND_ENGINEER);
+    const before = { users: await db.select().from(user), audit: await db.select().from(auditLog) };
+
+    await expect(changeUserRole({}, form({ userId: second, role: "admin" }))).rejects.toMatchObject(notFound);
+    await expect(deactivate({}, form({ userId: second }))).rejects.toMatchObject(notFound);
+    await expect(reactivate({}, form({ userId: second }))).rejects.toMatchObject(notFound);
+    await expect(moveJobCards({}, form({ fromUserId: second, toUserId: second }))).rejects.toMatchObject(notFound);
+
+    expect(await db.select().from(user)).toEqual(before.users);
+    expect(await db.select().from(auditLog)).toEqual(before.audit);
+  });
+
+  it("send anyone signed out to the sign-in page and change nothing", async () => {
+    await expect(changeUserRole({}, form({ userId: "x", role: "admin" }))).rejects.toMatchObject(redirectedToSignIn);
+    await expect(deactivate({}, form({ userId: "x" }))).rejects.toMatchObject(redirectedToSignIn);
+    await expect(reactivate({}, form({ userId: "x" }))).rejects.toMatchObject(redirectedToSignIn);
+    await expect(moveJobCards({}, form({ fromUserId: "x", toUserId: "y" }))).rejects.toMatchObject(redirectedToSignIn);
+    expect(await db.select().from(auditLog)).toEqual([]);
   });
 });

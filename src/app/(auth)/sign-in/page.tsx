@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PRIVACY_PATH, TERMS_PATH } from "@/legal";
 import { signIn } from "../actions";
 import { AuthForm } from "../auth-form";
 
@@ -19,6 +20,9 @@ export default async function SignInPage({ searchParams }: Props) {
       </p>
       <p className="muted">
         Setting up the app as its first Admin? <Link href="/sign-up">Create your account</Link>
+      </p>
+      <p>
+        Read the <Link href={TERMS_PATH}>terms of use</Link> and the <Link href={PRIVACY_PATH}>privacy notice</Link>.
       </p>
     </main>
   );

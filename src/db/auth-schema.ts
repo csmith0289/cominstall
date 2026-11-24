@@ -17,6 +17,8 @@ export const user = pgTable("user", {
   role: text("role", { enum: ["engineer", "admin"] }).notNull().default("engineer"),
   // Set when an Admin deactivates the User. A deactivated User can't sign in or use a session.
   deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+  // When the User last signed in, shown on Admin → Users. Kept here because sessions end and are deleted.
+  lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
   // Which version of the terms of use the User accepted, and when (ticket 11).
   termsVersion: text("terms_version"),
   termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),

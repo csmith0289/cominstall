@@ -43,6 +43,26 @@ main.narrow {
   gap: 0.5rem 1rem;
 }
 
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.5rem;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+/* The terms of use and privacy notice are read on phones: a comfortable reading width. */
+main.legal {
+  max-width: 40rem;
+}
+
+main.legal h2 {
+  font-size: 1.1rem;
+  margin-top: 1.5rem;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -163,7 +183,24 @@ select {
 .row {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
   gap: 0.5rem;
+}
+
+/* A label beside its control, for short controls in a row. */
+label.inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  max-width: 100%;
 }
 
 .cards {
