@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 import { E2E_ADMIN_EMAIL, E2E_INVITING_ADMIN_EMAILS, E2E_OPERATOR_EMAIL, E2E_PHONE_ADMIN_EMAILS } from "./e2e/accounts";
 
-const port = 3100;
+// E2E_PORT moves the test server off 3100 when a stuck server from an earlier run still holds it.
+const port = Number(process.env.E2E_PORT) || 3100;
 const baseURL = `http://localhost:${port}`;
 const stamp = Date.now();
 
