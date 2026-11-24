@@ -49,43 +49,57 @@ function changesFrom(patch: Partial<Card>): JobCardChanges {
   return changes;
 }
 
+type Field = keyof JobCardChanges;
+
 // Sends the fields edited since the last save shortly after each change, one save at a time, and keeps trying while
 // there's no signal. Fields not edited here are never sent, so they can't overwrite newer work saved elsewhere.
 function useAutosave(id: string) {
   const [state, setState] = useState<SaveState>({ kind: "saved" });
   const pending = useRef<JobCardChanges>({});
+  const sending = useRef<JobCardChanges>({});
   const saving = useRef(false);
-  // Goes up with every edit, so a reload from the server can tell whether the Engineer typed while it was on its way.
+  // Goes up with every edit; `lastEdit` remembers it per field, so a copy from the server can tell which fields the
+  // Engineer has typed in since it was asked for.
   const edits = useRef(0);
+  const lastEdit = useRef<Partial<Record<Field, number>>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Once the form has gone (the Engineer left the card), whatever is waiting is sent straight away.
+  const gone = useRef(false);
   const hasPending = () => Object.keys(pending.current).length > 0;
 
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
     if (saving.current || !hasPending()) return;
     saving.current = true;
-    const sending = pending.current;
+    sending.current = pending.current;
     pending.current = {};
     let retryAfter = 0;
     try {
-      const result = await saveJobCardChanges(id, sending);
-      if ("error" in result) setState({ kind: "error", message: result.error });
-      else if (!hasPending()) setState({ kind: "saved" });
+      const result = await saveJobCardChanges(id, sending.current);
+      if ("error" in result) {
+        // Refused (an empty Date, say): keep every edit that went with it, so it goes again with the next change.
+        pending.current = { ...sending.current, ...pending.current };
+        setState({ kind: "error", message: result.error });
+        retryAfter = -1;
+      } else if (!hasPending()) setState({ kind: "saved" });
     } catch {
       // Anything edited since takes priority over what didn't go.
-      pending.current = { ...sending, ...pending.current };
+      pending.current = { ...sending.current, ...pending.current };
       retryAfter = RETRY_AFTER_MS;
       setState({ kind: "offline" });
     } finally {
+      sending.current = {};
       saving.current = false;
     }
-    if (hasPending()) timer.current = setTimeout(() => void flush(), retryAfter || SAVE_AFTER_MS);
+    // A refused save waits for the Engineer's next change, rather than being sent again as it is.
+    if (hasPending() && retryAfter >= 0) timer.current = setTimeout(() => void flush(), retryAfter || (gone.current ? 0 : SAVE_AFTER_MS));
   }, [id]);
 
   const changed = useCallback(
     (changes: JobCardChanges) => {
       pending.current = { ...pending.current, ...changes };
       edits.current += 1;
+      for (const field of Object.keys(changes) as Field[]) lastEdit.current[field] = edits.current;
       setState((current) => (current.kind === "offline" ? current : { kind: "saving" }));
       clearTimeout(timer.current);
       timer.current = setTimeout(() => void flush(), SAVE_AFTER_MS);
@@ -94,17 +108,24 @@ function useAutosave(id: string) {
   );
 
   useEffect(() => {
+    gone.current = false;
     const online = () => void flush();
     window.addEventListener("online", online);
     return () => {
       window.removeEventListener("online", online);
-      clearTimeout(timer.current);
+      // Leaving the card (My Jobs, Back) mustn't drop an edit that was waiting for typing to stop.
+      gone.current = true;
+      void flush();
     };
   }, [flush]);
 
-  const idle = useCallback(() => !saving.current && !hasPending(), []);
   const editCount = useCallback(() => edits.current, []);
-  return { state, changed, idle, editCount };
+  // True if the field has an edit that isn't saved yet, or was edited after edit number `since`.
+  const editedSince = useCallback(
+    (field: Field, since: number) => field in pending.current || field in sending.current || (lastEdit.current[field] ?? 0) > since,
+    [],
+  );
+  return { state, changed, editCount, editedSince };
 }
 
 function SaveStatus({ state }: { state: SaveState }) {
@@ -125,7 +146,7 @@ export function JobCardForm({ card: initial }: { card: JobCardView }) {
     latest.current = next;
     setCardState(next);
   };
-  const { state, changed, idle, editCount } = useAutosave(initial.id);
+  const { state, changed, editCount, editedSince } = useAutosave(initial.id);
   const locked = card.status === "complete";
   // Changes when the Vehicle is replaced by a newer copy from the server, so the Reg field starts again from it.
   const [regRevision, setRegRevision] = useState(0);
@@ -136,33 +157,63 @@ export function JobCardForm({ card: initial }: { card: JobCardView }) {
   };
 
   // The page may have come from the browser's or the router's cache (Back, Forward), or sat in a tab while the card
-  // was changed in another one. Catch up with the latest saved copy, unless the Engineer has edits on the way.
+  // was changed in another one. Catch up with the latest saved copy, keeping only the fields the Engineer has edited
+  // since asking for it (or hasn't saved yet). With no signal, keep trying until it comes back.
   useEffect(() => {
+    let asked = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let behind = false;
     const catchUp = async () => {
-      if (!idle()) return;
+      clearTimeout(retry);
+      const ask = ++asked;
       const before = editCount();
       let fresh: JobCardView | null;
       try {
         fresh = await latestJobCard(initial.id);
       } catch {
+        if (ask === asked) {
+          behind = true;
+          retry = setTimeout(() => void catchUp(), RETRY_AFTER_MS);
+        }
         return;
       }
-      if (!fresh || !idle() || editCount() !== before) return;
-      const next = cardFrom(fresh);
-      if (next.vehicle?.id !== latest.current.vehicle?.id) setRegRevision((revision) => revision + 1);
+      // A later catch-up is on its way, and knows better.
+      if (ask !== asked) return;
+      behind = false;
+      if (!fresh) return;
+      const server = cardFrom(fresh);
+      const local = latest.current;
+      const keep = (field: Field) => editedSince(field, before);
+      const next: Card = {
+        ...server,
+        jobDate: keep("jobDate") ? local.jobDate : server.jobDate,
+        vehicle: keep("vehicleId") ? local.vehicle : server.vehicle,
+        customer: keep("vehicleId") ? local.customer : server.customer,
+        mileage: keep("mileage") ? local.mileage : server.mileage,
+        workCarriedOut: keep("workCarriedOut") ? local.workCarriedOut : server.workCarriedOut,
+        parts: keep("parts") ? local.parts : server.parts,
+      };
+      if (next.vehicle?.id !== local.vehicle?.id) setRegRevision((revision) => revision + 1);
       setCard(next);
     };
     const onVisible = () => {
       if (document.visibilityState === "visible") void catchUp();
     };
+    const onOnline = () => {
+      if (behind) void catchUp();
+    };
     void catchUp();
     window.addEventListener("pageshow", catchUp);
+    window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearTimeout(retry);
+      asked += 1;
       window.removeEventListener("pageshow", catchUp);
+      window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [initial.id, idle, editCount]);
+  }, [initial.id, editCount, editedSince]);
 
   const work = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {

@@ -211,6 +211,99 @@ test("Parts Used stops at 100 rows, and the card still saves", async ({ page, br
   await expect(page.getByLabel("Part, row 1")).toHaveValue("Last relay");
 });
 
+// #27
+test("editing straight after Back still catches up with the latest copy, and nothing saved is overwritten", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Quick Tap Engineer");
+  await startNewJobCard(page);
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await work.fill("Replaced the rear marker lamp");
+  await page.getByLabel("Mileage").fill("120500");
+  await expect(saveState(page)).toHaveText("Saved");
+
+  await page.getByRole("link", { name: "← My Jobs" }).click();
+  await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
+  // A slow signal: every request to the server takes a while, so the Engineer's edit goes in before the catch-up is back.
+  await page.route("**/*", async (route) => {
+    if (route.request().headers()["next-action"]) await new Promise((resolve) => setTimeout(resolve, 700));
+    await route.fallback();
+  });
+  await page.goBack();
+  await page.getByLabel("Part, row 1").fill("Lamp");
+  await expect(work).toHaveValue("Replaced the rear marker lamp");
+  await expect(page.getByLabel("Mileage")).toHaveValue("120500");
+  await expect(page.getByLabel("Part, row 1")).toHaveValue("Lamp");
+  await expect(saveState(page)).toHaveText("Saved");
+  await page.unrouteAll({ behavior: "wait" });
+
+  await page.reload();
+  await expect(work).toHaveValue("Replaced the rear marker lamp");
+  await expect(page.getByLabel("Mileage")).toHaveValue("120500");
+  await expect(page.getByLabel("Part, row 1")).toHaveValue("Lamp");
+});
+
+// #27, with no signal
+test("going Back with no signal catches up once the signal is back", async ({ page, browser, context }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Dead Spot Engineer");
+  await startNewJobCard(page);
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await work.fill("Swapped the reversing camera");
+  await page.getByLabel("Mileage").fill("54321");
+  await expect(saveState(page)).toHaveText("Saved");
+
+  await page.getByRole("link", { name: "← My Jobs" }).click();
+  await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
+  await context.setOffline(true);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Job Card", exact: true })).toBeVisible();
+  await page.waitForTimeout(500);
+  await context.setOffline(false);
+  await expect(work).toHaveValue("Swapped the reversing camera");
+  await expect(page.getByLabel("Mileage")).toHaveValue("54321");
+});
+
+// #28
+test("leaving the Job Card straight after typing still saves the last edit", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Hasty Engineer");
+  await startNewJobCard(page);
+  const url = page.url();
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await work.fill("Checked brake lines");
+  await expect(saveState(page)).toHaveText("Saved");
+
+  // Through the browser's Back button (to My Jobs, where the card was opened from).
+  await page.getByLabel("Mileage").fill("4321");
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
+  await page.goto(url);
+  await expect(page.getByLabel("Mileage")).toHaveValue("4321");
+
+  // Through the app's own link.
+  await work.fill("Checked brake lines and topped up fluid");
+  await page.getByRole("link", { name: "← My Jobs" }).click();
+  await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
+  await page.goto(url);
+  await expect(work).toHaveValue("Checked brake lines and topped up fluid");
+  await expect(page.getByLabel("Mileage")).toHaveValue("4321");
+});
+
+// #29
+test("a save refused for an empty Date keeps the other edits, and they save once the Date is put back", async ({ page, browser }, testInfo) => {
+  await signUpNewEngineer(page, browser, testInfo.project.name, "Dateless Engineer");
+  await startNewJobCard(page);
+  const work = page.getByRole("textbox", { name: "Work Carried Out" });
+  await page.getByLabel("Date").fill("");
+  await work.fill("Serviced the tachograph");
+  await page.getByLabel("Mileage").fill("64000");
+  await expect(saveState(page)).toHaveText("Not saved – Enter the Date.");
+
+  await page.getByLabel("Date").fill("2026-11-20");
+  await expect(saveState(page)).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByLabel("Date")).toHaveValue("2026-11-20");
+  await expect(work).toHaveValue("Serviced the tachograph");
+  await expect(page.getByLabel("Mileage")).toHaveValue("64000");
+});
+
 test("a Job Card sends anyone signed out to the sign-in page", async ({ page }) => {
   await page.goto("/jobs/any-id");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();

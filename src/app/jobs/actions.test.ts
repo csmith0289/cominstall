@@ -9,6 +9,7 @@ import type { Database } from "@/db";
 import { customers, invitations, jobCards, user, vehicles } from "@/db/schema";
 import { createMailer } from "@/email";
 import { createTestDatabase } from "@/db/test-database";
+import { TERMS_VERSION } from "@/legal";
 
 // Invented test accounts, firms and Regs, never real ones.
 const APP_URL = "http://localhost:3000";
@@ -55,6 +56,8 @@ async function signInAsEngineer(email: string): Promise<string> {
       .map((setCookie) => setCookie.split(";")[0])
       .join("; "),
   });
+  // These tests are about Engineers who have already accepted the terms of use.
+  await db.update(user).set({ termsVersion: TERMS_VERSION, termsAcceptedAt: new Date() }).where(eq(user.email, email));
   const [found] = await db.select({ id: user.id }).from(user).where(eq(user.email, email));
   return found!.id;
 }

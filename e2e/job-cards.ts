@@ -2,6 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { E2E_PASSWORD } from "./accounts";
 import { openUsersAsAdmin, sendInvitation, uniqueEmail } from "./invitations";
 import { linkInEmail } from "./outbox";
+import { acceptTerms } from "./terms";
 
 // A new Engineer, invited by this project's Admin (in a context of its own), who accepts on `page` and lands on My Jobs.
 export async function signUpNewEngineer(page: Page, browser: Browser, project: string, name: string) {
@@ -17,6 +18,7 @@ export async function signUpNewEngineer(page: Page, browser: Browser, project: s
   await page.getByLabel("Your name").fill(name);
   await page.getByLabel("Choose a password").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
+  await acceptTerms(page);
   await expect(page.getByRole("heading", { name: "My Jobs" })).toBeVisible();
   return email;
 }
